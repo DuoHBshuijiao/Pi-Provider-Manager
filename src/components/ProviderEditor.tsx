@@ -15,6 +15,27 @@ interface Props {
   onChange: (provider: ProviderConfig) => void;
 }
 
+const KNOWN_PROVIDER_KEYS = new Set([
+  "baseUrl",
+  "apiKey",
+  "api",
+  "headers",
+  "compat",
+  "authHeader",
+  "models",
+  "modelOverrides",
+]);
+
+function extraFields(provider: ProviderConfig): Record<string, unknown> {
+  const extra: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(provider)) {
+    if (!KNOWN_PROVIDER_KEYS.has(key)) {
+      extra[key] = value;
+    }
+  }
+  return extra;
+}
+
 export function ProviderEditor({
   name,
   provider,
@@ -29,8 +50,28 @@ export function ProviderEditor({
     onChange({ ...provider, ...updates });
   };
 
+  const mergeExtra = (raw: string) => {
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const cleaned: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(provider)) {
+        if (KNOWN_PROVIDER_KEYS.has(key)) cleaned[key] = value;
+      }
+      onChange({ ...cleaned, ...parsed } as ProviderConfig);
+    } catch {
+      // ignore
+    }
+  };
+
   return (
     <div>
+      {builtin && (
+        <div className="alert alert-warning mb-md" role="status">
+          内建 Provider：<code>models</code> 中同 ID 会替换 Pi 内建模型；只想改内建模型属性，请使用{" "}
+          <code>modelOverrides</code>。
+        </div>
+      )}
+
       <div className="form-section">
         <h3 className="form-section-title">基础配置</h3>
         <div className="form-grid">
@@ -84,7 +125,11 @@ export function ProviderEditor({
             <input
               type="checkbox"
               checked={provider.authHeader ?? false}
-              onChange={(e) => patch({ authHeader: e.target.checked || undefined })}
+              onChange={(e) =>
+                patch({
+                  authHeader: e.target.checked ? true : undefined,
+                })
+              }
             />
             <span>自动添加 Authorization: Bearer 头</span>
           </label>
@@ -94,12 +139,21 @@ export function ProviderEditor({
       <KeyValueEditor
         label="自定义 Headers"
         value={provider.headers ?? {}}
-        onChange={(headers) => patch({ headers: Object.keys(headers).length ? headers : undefined })}
+        onChange={(headers) =>
+          patch({
+            headers: Object.keys(headers).filter((k) => k.trim()).length
+              ? Object.fromEntries(Object.entries(headers).filter(([k]) => k.trim()))
+              : undefined,
+          })
+        }
       />
 
       <CompatEditor
         compat={provider.compat as Record<string, unknown> | undefined}
-        onChange={(compat) => patch({ compat: Object.keys(compat).length ? compat : undefined })}
+        apiType={provider.api}
+        onChange={(compat) =>
+          patch({ compat: Object.keys(compat).length ? compat : undefined })
+        }
       />
 
       <ModelEditor
@@ -113,13 +167,30 @@ export function ProviderEditor({
           overrides={provider.modelOverrides ?? {}}
           onChange={(modelOverrides) =>
             patch({
-              modelOverrides: Object.keys(modelOverrides).length ? modelOverrides : undefined,
+              modelOverrides: Object.keys(modelOverrides).length
+                ? modelOverrides
+                : undefined,
             })
           }
         />
       )}
 
-      {!builtin && builtinProviders.includes(name) === false && (
+      <details className="collapsible">
+        <summary>高级字段 JSON（UI 未覆盖的 Provider 键）</summary>
+        <div className="collapsible-content">
+          <p className="text-sm text-muted mb-sm">
+            仅编辑未知/额外字段；表单已管理的键不会被此处删除。
+          </p>
+          <textarea
+            className="json-editor"
+            style={{ minHeight: 120 }}
+            value={JSON.stringify(extraFields(provider), null, 2)}
+            onChange={(e) => mergeExtra(e.target.value)}
+          />
+        </div>
+      </details>
+
+      {!builtin && !builtinProviders.includes(name) && (
         <p className="text-sm text-muted">
           提示：第三方 Provider 需配置 baseUrl 与 api 类型。
         </p>

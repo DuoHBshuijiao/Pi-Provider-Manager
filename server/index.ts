@@ -23,8 +23,9 @@ serve(
   {
     fetch: app.fetch,
     port,
+    hostname: "127.0.0.1",
   },
   (info) => {
-    console.log(`Pi Provider Manager API running on http://localhost:${info.port}`);
+    console.log(`Pi Provider Manager API running on http://127.0.0.1:${info.port}`);
   },
 );

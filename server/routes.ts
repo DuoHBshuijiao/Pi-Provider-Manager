@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { cors } from "hono/cors";
 import {
   API_TYPES,
   BUILTIN_PROVIDERS,
@@ -11,13 +10,6 @@ import {
 import { readConfig, resolveBackupDir, resolveModelsJsonPath, writeConfig } from "./config-store.js";
 
 export const api = new Hono();
-
-api.use(
-  "/*",
-  cors({
-    origin: "*",
-  }),
-);
 
 api.get("/meta", (c) => {
   return c.json({
@@ -81,4 +73,3 @@ api.post("/validate", async (c) => {
     );
   }
 });
-

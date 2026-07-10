@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { randomBytes } from "node:crypto";
 import {
   createEmptyConfig,
   type ModelsConfig,
@@ -20,7 +21,14 @@ export function resolveBackupDir(): string {
 function formatBackupName(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `models-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.json`;
+  const ms = String(now.getMilliseconds()).padStart(3, "0");
+  const suffix = randomBytes(3).toString("hex");
+  return `models-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}${ms}-${suffix}.json`;
+}
+
+function uniqueTempPath(filePath: string): string {
+  const suffix = randomBytes(6).toString("hex");
+  return `${filePath}.${process.pid}.${suffix}.tmp`;
 }
 
 async function ensureDir(dir: string): Promise<void> {
@@ -98,10 +106,15 @@ export async function writeConfig(config: ModelsConfig): Promise<{
 
   const backupPath = await backupConfig(filePath);
   const content = `${JSON.stringify(validation.data, null, 2)}\n`;
-  const tempPath = `${filePath}.tmp`;
+  const tempPath = uniqueTempPath(filePath);
 
-  await fs.writeFile(tempPath, content, "utf-8");
-  await fs.rename(tempPath, filePath);
+  try {
+    await fs.writeFile(tempPath, content, "utf-8");
+    await fs.rename(tempPath, filePath);
+  } catch (error) {
+    await fs.unlink(tempPath).catch(() => undefined);
+    throw error;
+  }
 
   return { path: filePath, backupPath };
 }

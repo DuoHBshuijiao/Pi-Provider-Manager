@@ -54,8 +54,9 @@
   --space-3xl: 4rem; /* 64 */
 
   --z-sticky: 20;
-  --z-dropdown: 35;
   --z-modal: 40;
+  /* Dropdown 经 portal 挂到 body，须高于 modal，否则弹窗内选单被盖住 */
+  --z-dropdown: 50;
 
   /* Type ramp — fixed rem, ~1.125–1.2 between steps */
   --font-sans: "Source Sans 3", "Source Sans 3 Fallback", system-ui, sans-serif;
@@ -392,6 +393,12 @@ textarea {
   color: var(--info);
 }
 
+.alert-warning {
+  background: var(--warning-soft);
+  border-color: var(--warning-border);
+  color: var(--warning);
+}
+
 .layout {
   display: grid;
   grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
@@ -587,6 +594,70 @@ textarea {
   font-weight: var(--weight-medium);
   line-height: var(--leading-snug);
   color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+}
+
+.compat-label {
+  flex-wrap: wrap;
+}
+
+.compat-hint {
+  max-width: 65ch;
+}
+
+.compat-grid {
+  margin-bottom: var(--space-sm);
+}
+
+.help-tip {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.help-tip-btn {
+  width: 1.125rem;
+  height: 1.125rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  cursor: help;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.help-tip-btn:hover,
+.help-tip-btn:focus-visible {
+  border-color: var(--primary);
+  color: var(--primary);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.help-tip-pop {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: var(--z-dropdown);
+  width: min(280px, 70vw);
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--ink);
+  color: var(--on-primary);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-snug);
+  box-shadow: 0 4px 12px oklch(0.28 0.03 150 / 0.18);
+  text-wrap: pretty;
 }
 
 .form-field input[type="number"] {

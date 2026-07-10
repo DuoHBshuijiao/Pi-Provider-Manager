@@ -1,9 +1,26 @@
 import { useState } from "react";
 import type { ModelOverride } from "@shared/schema";
+import { TRANSPORT_TYPES } from "@shared/builtins";
+import { Dropdown } from "./Dropdown";
+import { KeyValueEditor } from "./KeyValueEditor";
 
 interface Props {
   overrides: Record<string, ModelOverride>;
   onChange: (overrides: Record<string, ModelOverride>) => void;
+}
+
+type TriState = "default" | "true" | "false";
+
+const REASONING_OPTIONS = [
+  { value: "default", label: "未设置（继承）" },
+  { value: "true", label: "支持（true）" },
+  { value: "false", label: "不支持（false）" },
+];
+
+function readReasoning(override: ModelOverride): TriState {
+  if (override.reasoning === true) return "true";
+  if (override.reasoning === false) return "false";
+  return "default";
 }
 
 export function ModelOverridesEditor({ overrides, onChange }: Props) {
@@ -20,6 +37,7 @@ export function ModelOverridesEditor({ overrides, onChange }: Props) {
   };
 
   const removeOverride = (id: string) => {
+    if (!window.confirm(`确定删除覆盖「${id}」？`)) return;
     const next = { ...overrides };
     delete next[id];
     onChange(next);
@@ -38,7 +56,7 @@ export function ModelOverridesEditor({ overrides, onChange }: Props) {
     <div className="form-section">
       <h3 className="form-section-title">模型覆盖 (modelOverrides)</h3>
       <p className="text-sm text-muted mb-sm">
-        覆盖内建或扩展模型的属性，无需替换完整模型列表。
+        覆盖内建或扩展模型的属性，无需替换完整模型列表。只写需要改的字段。
       </p>
 
       <div className="input-group mb-md">
@@ -53,15 +71,22 @@ export function ModelOverridesEditor({ overrides, onChange }: Props) {
         </button>
       </div>
 
-      {entries.length === 0 && (
-        <p className="text-sm text-muted">暂无覆盖项</p>
-      )}
+      {entries.length === 0 && <p className="text-sm text-muted">暂无覆盖项</p>}
 
       {entries.map(([id, override]) => (
         <div key={id} className="model-card">
           <div
             className="model-card-header"
+            role="button"
+            tabIndex={0}
+            aria-expanded={expanded === id}
             onClick={() => setExpanded(expanded === id ? null : id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setExpanded(expanded === id ? null : id);
+              }
+            }}
           >
             <span className="model-card-title">{id}</span>
             <button
@@ -86,6 +111,7 @@ export function ModelOverridesEditor({ overrides, onChange }: Props) {
                     onChange={(e) =>
                       updateOverride(id, { name: e.target.value || undefined })
                     }
+                    placeholder="未设置"
                   />
                 </div>
                 <div className="form-field">
@@ -95,9 +121,12 @@ export function ModelOverridesEditor({ overrides, onChange }: Props) {
                     value={override.contextWindow ?? ""}
                     onChange={(e) =>
                       updateOverride(id, {
-                        contextWindow: e.target.value ? Number(e.target.value) : undefined,
+                        contextWindow: e.target.value
+                          ? Number(e.target.value)
+                          : undefined,
                       })
                     }
+                    placeholder="未设置"
                   />
                 </div>
                 <div className="form-field">
@@ -107,22 +136,86 @@ export function ModelOverridesEditor({ overrides, onChange }: Props) {
                     value={override.maxTokens ?? ""}
                     onChange={(e) =>
                       updateOverride(id, {
-                        maxTokens: e.target.value ? Number(e.target.value) : undefined,
+                        maxTokens: e.target.value
+                          ? Number(e.target.value)
+                          : undefined,
+                      })
+                    }
+                    placeholder="未设置"
+                  />
+                </div>
+                <div className="form-field">
+                  <label htmlFor={`override-transport-${id}`}>Transport</label>
+                  <Dropdown
+                    id={`override-transport-${id}`}
+                    value={override.transport ?? ""}
+                    placeholder="未设置"
+                    options={[
+                      { value: "", label: "未设置" },
+                      ...TRANSPORT_TYPES.map((t) => ({ value: t, label: t })),
+                    ]}
+                    onChange={(next) =>
+                      updateOverride(id, {
+                        transport: (next || undefined) as ModelOverride["transport"],
                       })
                     }
                   />
                 </div>
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={override.reasoning ?? false}
-                    onChange={(e) =>
-                      updateOverride(id, { reasoning: e.target.checked || undefined })
-                    }
+                <div className="form-field">
+                  <label htmlFor={`override-reasoning-${id}`}>推理</label>
+                  <Dropdown
+                    id={`override-reasoning-${id}`}
+                    value={readReasoning(override)}
+                    options={REASONING_OPTIONS}
+                    onChange={(next) => {
+                      if (next === "default") {
+                        updateOverride(id, { reasoning: undefined });
+                      } else {
+                        updateOverride(id, { reasoning: next === "true" });
+                      }
+                    }}
                   />
-                  <span>支持推理</span>
-                </label>
+                </div>
               </div>
+
+              <KeyValueEditor
+                label="Headers（可选）"
+                value={override.headers ?? {}}
+                onChange={(headers) =>
+                  updateOverride(id, {
+                    headers: Object.keys(headers).filter((k) => k.trim()).length
+                      ? Object.fromEntries(
+                          Object.entries(headers).filter(([k]) => k.trim()),
+                        )
+                      : undefined,
+                  })
+                }
+              />
+
+              <details className="collapsible">
+                <summary>thinkingLevelMap JSON</summary>
+                <div className="collapsible-content">
+                  <textarea
+                    className="json-editor"
+                    style={{ minHeight: 100 }}
+                    value={JSON.stringify(override.thinkingLevelMap ?? {}, null, 2)}
+                    onChange={(e) => {
+                      try {
+                        const parsed = JSON.parse(e.target.value) as Record<
+                          string,
+                          string | null
+                        >;
+                        updateOverride(id, {
+                          thinkingLevelMap:
+                            Object.keys(parsed).length > 0 ? parsed : undefined,
+                        });
+                      } catch {
+                        // ignore
+                      }
+                    }}
+                  />
+                </div>
+              </details>
 
               <details className="collapsible">
                 <summary>compat JSON</summary>
@@ -133,8 +226,13 @@ export function ModelOverridesEditor({ overrides, onChange }: Props) {
                     value={JSON.stringify(override.compat ?? {}, null, 2)}
                     onChange={(e) => {
                       try {
-                        const parsed = JSON.parse(e.target.value) as Record<string, unknown>;
-                        updateOverride(id, { compat: parsed });
+                        const parsed = JSON.parse(e.target.value) as Record<
+                          string,
+                          unknown
+                        >;
+                        updateOverride(id, {
+                          compat: Object.keys(parsed).length ? parsed : undefined,
+                        });
                       } catch {
                         // ignore
                       }
