@@ -644,11 +644,8 @@ textarea {
 }
 
 .help-tip-pop {
-  position: absolute;
-  left: 0;
-  top: calc(100% + 6px);
+  position: fixed;
   z-index: var(--z-dropdown);
-  width: min(280px, 70vw);
   padding: var(--space-xs) var(--space-sm);
   background: var(--ink);
   color: var(--on-primary);
@@ -658,6 +655,9 @@ textarea {
   line-height: var(--leading-snug);
   box-shadow: 0 4px 12px oklch(0.28 0.03 150 / 0.18);
   text-wrap: pretty;
+  box-sizing: border-box;
+  max-width: min(280px, calc(100vw - 16px));
+  pointer-events: auto;
 }
 
 .form-field input[type="number"] {

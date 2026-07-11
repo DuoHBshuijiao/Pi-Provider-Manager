@@ -5,7 +5,7 @@
 $ErrorActionPreference = "Stop"
 $ProjectRoot = $PSScriptRoot
 $Url = "http://localhost:5173"
-$ApiUrl = "http://localhost:8787"
+$ApiUrl = "http://127.0.0.1:8787"
 $Port = 5173
 
 Set-Location -LiteralPath $ProjectRoot
