@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ProviderConfig } from "@shared/schema";
 import { createDefaultProvider } from "@shared/schema";
 import { Dropdown } from "./Dropdown";
@@ -13,6 +13,9 @@ interface Props {
   onCreate: (name: string, provider: ProviderConfig) => void;
 }
 
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export function NewProviderModal({
   builtinProviders,
   apiTypes,
@@ -21,6 +24,9 @@ export function NewProviderModal({
   onCreate,
 }: Props) {
   const titleId = useId();
+  const errorId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previouslyFocused = useRef<HTMLElement | null>(null);
   const [mode, setMode] = useState<Mode>("third-party");
   const [name, setName] = useState("");
   const [builtinName, setBuiltinName] = useState(builtinProviders[0] ?? "anthropic");
@@ -31,22 +37,55 @@ export function NewProviderModal({
   const finalName = mode === "builtin" ? builtinName : name.trim();
 
   useEffect(() => {
-    document.getElementById("provider-mode")?.focus();
+    previouslyFocused.current = document.activeElement as HTMLElement | null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+
+    // 等首帧渲染后聚焦类型下拉
+    requestAnimationFrame(() => {
+      document.getElementById("provider-mode")?.focus();
+    });
+
     return () => {
       document.body.style.overflow = previousOverflow;
+      previouslyFocused.current?.focus?.();
     };
   }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      // 先让打开的下拉菜单自己关掉，不连带关弹窗
-      if (document.querySelector(".dropdown-menu")) return;
-      event.preventDefault();
-      onClose();
+      if (event.key === "Escape") {
+        // 先让打开的下拉菜单自己关掉，不连带关弹窗
+        if (document.querySelector(".dropdown-menu")) return;
+        event.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (event.key !== "Tab" || !dialogRef.current) return;
+
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE),
+      ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      const active = document.activeElement as HTMLElement | null;
+
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
+
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
@@ -64,13 +103,28 @@ export function NewProviderModal({
       return;
     }
 
-    const provider = createDefaultProvider();
-
     if (mode === "third-party") {
-      if (!baseUrl.trim()) {
+      const url = baseUrl.trim();
+      if (!url) {
         setError("第三方 Provider 需要填写 Base URL");
         return;
       }
+      try {
+        const candidate = url.includes("://") ? url : `https://${url}`;
+        const parsed = new URL(candidate);
+        if (!parsed.hostname) {
+          setError("Base URL 格式无效，请使用完整地址（如 https://api.example.com/v1）");
+          return;
+        }
+      } catch {
+        setError("Base URL 格式无效，请使用完整地址（如 https://api.example.com/v1）");
+        return;
+      }
+    }
+
+    const provider = createDefaultProvider();
+
+    if (mode === "third-party") {
       provider.baseUrl = baseUrl.trim();
       provider.api = api as ProviderConfig["api"];
     } else {
@@ -83,12 +137,18 @@ export function NewProviderModal({
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose} role="presentation">
+    <div
+      className="modal-overlay"
+      onClick={onClose}
+      role="presentation"
+    >
       <div
+        ref={dialogRef}
         className="modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={error ? errorId : undefined}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header" id={titleId}>
@@ -104,7 +164,10 @@ export function NewProviderModal({
                 { value: "third-party", label: "第三方 Provider" },
                 { value: "builtin", label: "扩展内建 Provider" },
               ]}
-              onChange={(next) => setMode(next as Mode)}
+              onChange={(next) => {
+                setMode(next as Mode);
+                setError(null);
+              }}
             />
           </div>
 
@@ -118,6 +181,8 @@ export function NewProviderModal({
                   onChange={(e) => setName(e.target.value)}
                   placeholder="如 zenmux、ark"
                   autoComplete="off"
+                  aria-required="true"
+                  aria-invalid={Boolean(error && !name.trim()) || undefined}
                   onKeyDown={(e) => e.key === "Enter" && handleCreate()}
                 />
               </div>
@@ -129,6 +194,8 @@ export function NewProviderModal({
                   onChange={(e) => setBaseUrl(e.target.value)}
                   placeholder="https://api.example.com/v1"
                   autoComplete="off"
+                  inputMode="url"
+                  aria-required="true"
                 />
               </div>
               <div className="form-field">
@@ -149,15 +216,17 @@ export function NewProviderModal({
                 value={builtinName}
                 options={builtinProviders.map((p) => ({ value: p, label: p }))}
                 onChange={setBuiltinName}
+                disabled={builtinProviders.length === 0}
+                searchable
               />
-              <p className="text-sm text-muted mt-xs">
+              <p className="text-sm text-muted mt-xs" id="builtin-hint">
                 可为内建 Provider 追加 models 或设置 modelOverrides，无需重新定义全部模型。
               </p>
             </div>
           )}
 
           {error && (
-            <div className="alert alert-error mt-md mb-0" role="alert">
+            <div id={errorId} className="alert alert-error mt-md mb-0" role="alert">
               {error}
             </div>
           )}

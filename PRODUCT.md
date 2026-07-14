@@ -39,4 +39,4 @@ web
 
 ## Accessibility & Inclusion
 
-基础可用即可：可读对比度、可见焦点环、尊重 `prefers-reduced-motion`。不强制 WCAG AA/AAA 全量审计。
+目标 **WCAG 2.2 AA**：可读对比度（正文/占位符 ≥4.5:1）、可见焦点环、键盘可达（含模态焦点陷阱与 Tab 左右切换）、语义标签关联、`prefers-reduced-motion` 与 `forced-colors` 降级。错误需可感知（role=alert）且可恢复（重试/关闭）。

@@ -27,14 +27,35 @@ export interface SaveResponse {
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { "Content-Type": "application/json", ...init?.headers },
+      ...init,
+    });
+  } catch {
+    throw new Error("无法连接本地 API。请确认已运行 npm run dev，且服务端在 8787 端口监听。");
+  }
 
-  const data = (await res.json()) as T & { error?: string };
+  const text = await res.text();
+  let data: (T & { error?: string }) | null = null;
+  if (text) {
+    try {
+      data = JSON.parse(text) as T & { error?: string };
+    } catch {
+      throw new Error(
+        res.ok
+          ? "服务器返回了无法解析的响应"
+          : `请求失败: HTTP ${res.status}`,
+      );
+    }
+  }
+
   if (!res.ok) {
-    throw new Error(data.error ?? `请求失败: ${res.status}`);
+    throw new Error(data?.error ?? `请求失败: HTTP ${res.status}`);
+  }
+  if (data === null) {
+    throw new Error("服务器返回了空响应");
   }
   return data;
 }

@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { ModelOverride } from "@shared/schema";
 import { TRANSPORT_TYPES } from "@shared/builtins";
 import { Dropdown } from "./Dropdown";
 import { KeyValueEditor } from "./KeyValueEditor";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface Props {
   overrides: Record<string, ModelOverride>;
   onChange: (overrides: Record<string, ModelOverride>) => void;
+  pathPrefix?: string;
 }
 
 type TriState = "default" | "true" | "false";
@@ -23,9 +25,13 @@ function readReasoning(override: ModelOverride): TriState {
   return "default";
 }
 
-export function ModelOverridesEditor({ overrides, onChange }: Props) {
+export function ModelOverridesEditor({ overrides, onChange, pathPrefix }: Props) {
+  const newIdField = useId();
+  const errorId = useId();
   const [newId, setNewId] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   const entries = Object.entries(overrides);
 
@@ -37,16 +43,31 @@ export function ModelOverridesEditor({ overrides, onChange }: Props) {
   };
 
   const removeOverride = (id: string) => {
-    if (!window.confirm(`确定删除覆盖「${id}」？`)) return;
+    setPendingDelete(id);
+  };
+
+  const confirmRemoveOverride = () => {
+    if (!pendingDelete) return;
+    const id = pendingDelete;
     const next = { ...overrides };
     delete next[id];
     onChange(next);
     if (expanded === id) setExpanded(null);
+    setPendingDelete(null);
   };
 
   const addOverride = () => {
     const id = newId.trim();
-    if (!id || overrides[id]) return;
+    setAddError(null);
+    if (!id) {
+      setAddError("请填写要覆盖的模型 ID");
+      return;
+    }
+    if (overrides[id]) {
+      setAddError(`「${id}」已有覆盖项`);
+      setExpanded(id);
+      return;
+    }
     onChange({ ...overrides, [id]: {} });
     setNewId("");
     setExpanded(id);
@@ -56,194 +77,243 @@ export function ModelOverridesEditor({ overrides, onChange }: Props) {
     <div className="form-section">
       <h3 className="form-section-title">模型覆盖 (modelOverrides)</h3>
       <p className="text-sm text-muted mb-sm">
-        覆盖内建或扩展模型的属性，无需替换完整模型列表。只写需要改的字段。
+        覆盖内建或扩展模型的属性，无需替换完整模型列表。只写需要改的字段。模型 ID
+        请按供应商文档手填（各家命名不同，无法自动穷举）。
       </p>
 
-      <div className="input-group mb-md">
+      <div className="input-group mb-sm">
+        <label className="visually-hidden" htmlFor={newIdField}>
+          要覆盖的模型 ID
+        </label>
         <input
+          id={newIdField}
           value={newId}
-          onChange={(e) => setNewId(e.target.value)}
+          onChange={(e) => {
+            setNewId(e.target.value);
+            if (addError) setAddError(null);
+          }}
           placeholder="内建模型 ID，如 gpt-5.6-sol"
+          aria-invalid={Boolean(addError) || undefined}
+          aria-describedby={addError ? errorId : undefined}
           onKeyDown={(e) => e.key === "Enter" && addOverride()}
+          autoComplete="off"
         />
         <button type="button" className="btn btn-sm btn-primary" onClick={addOverride}>
           添加覆盖
         </button>
       </div>
+      {addError && (
+        <div id={errorId} className="alert alert-error mb-md" role="alert">
+          {addError}
+        </div>
+      )}
 
       {entries.length === 0 && <p className="text-sm text-muted">暂无覆盖项</p>}
 
-      {entries.map(([id, override]) => (
-        <div key={id} className="model-card">
-          <div
-            className="model-card-header"
-            role="button"
-            tabIndex={0}
-            aria-expanded={expanded === id}
-            onClick={() => setExpanded(expanded === id ? null : id)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setExpanded(expanded === id ? null : id);
-              }
-            }}
-          >
-            <span className="model-card-title">{id}</span>
-            <button
-              type="button"
-              className="btn btn-sm btn-danger"
-              onClick={(e) => {
-                e.stopPropagation();
-                removeOverride(id);
-              }}
-            >
-              删除
-            </button>
-          </div>
-
-          {expanded === id && (
-            <div className="model-card-body">
-              <div className="form-grid">
-                <div className="form-field">
-                  <label>显示名称</label>
-                  <input
-                    value={override.name ?? ""}
-                    onChange={(e) =>
-                      updateOverride(id, { name: e.target.value || undefined })
-                    }
-                    placeholder="未设置"
-                  />
-                </div>
-                <div className="form-field">
-                  <label>上下文窗口</label>
-                  <input
-                    type="number"
-                    value={override.contextWindow ?? ""}
-                    onChange={(e) =>
-                      updateOverride(id, {
-                        contextWindow: e.target.value
-                          ? Number(e.target.value)
-                          : undefined,
-                      })
-                    }
-                    placeholder="未设置"
-                  />
-                </div>
-                <div className="form-field">
-                  <label>最大输出 Tokens</label>
-                  <input
-                    type="number"
-                    value={override.maxTokens ?? ""}
-                    onChange={(e) =>
-                      updateOverride(id, {
-                        maxTokens: e.target.value
-                          ? Number(e.target.value)
-                          : undefined,
-                      })
-                    }
-                    placeholder="未设置"
-                  />
-                </div>
-                <div className="form-field">
-                  <label htmlFor={`override-transport-${id}`}>Transport</label>
-                  <Dropdown
-                    id={`override-transport-${id}`}
-                    value={override.transport ?? ""}
-                    placeholder="未设置"
-                    options={[
-                      { value: "", label: "未设置" },
-                      ...TRANSPORT_TYPES.map((t) => ({ value: t, label: t })),
-                    ]}
-                    onChange={(next) =>
-                      updateOverride(id, {
-                        transport: (next || undefined) as ModelOverride["transport"],
-                      })
-                    }
-                  />
-                </div>
-                <div className="form-field">
-                  <label htmlFor={`override-reasoning-${id}`}>推理</label>
-                  <Dropdown
-                    id={`override-reasoning-${id}`}
-                    value={readReasoning(override)}
-                    options={REASONING_OPTIONS}
-                    onChange={(next) => {
-                      if (next === "default") {
-                        updateOverride(id, { reasoning: undefined });
-                      } else {
-                        updateOverride(id, { reasoning: next === "true" });
-                      }
-                    }}
-                  />
-                </div>
-              </div>
-
-              <KeyValueEditor
-                label="Headers（可选）"
-                value={override.headers ?? {}}
-                onChange={(headers) =>
-                  updateOverride(id, {
-                    headers: Object.keys(headers).filter((k) => k.trim()).length
-                      ? Object.fromEntries(
-                          Object.entries(headers).filter(([k]) => k.trim()),
-                        )
-                      : undefined,
-                  })
-                }
-              />
-
-              <details className="collapsible">
-                <summary>thinkingLevelMap JSON</summary>
-                <div className="collapsible-content">
-                  <textarea
-                    className="json-editor"
-                    style={{ minHeight: 100 }}
-                    value={JSON.stringify(override.thinkingLevelMap ?? {}, null, 2)}
-                    onChange={(e) => {
-                      try {
-                        const parsed = JSON.parse(e.target.value) as Record<
-                          string,
-                          string | null
-                        >;
-                        updateOverride(id, {
-                          thinkingLevelMap:
-                            Object.keys(parsed).length > 0 ? parsed : undefined,
-                        });
-                      } catch {
-                        // ignore
-                      }
-                    }}
-                  />
-                </div>
-              </details>
-
-              <details className="collapsible">
-                <summary>compat JSON</summary>
-                <div className="collapsible-content">
-                  <textarea
-                    className="json-editor"
-                    style={{ minHeight: 120 }}
-                    value={JSON.stringify(override.compat ?? {}, null, 2)}
-                    onChange={(e) => {
-                      try {
-                        const parsed = JSON.parse(e.target.value) as Record<
-                          string,
-                          unknown
-                        >;
-                        updateOverride(id, {
-                          compat: Object.keys(parsed).length ? parsed : undefined,
-                        });
-                      } catch {
-                        // ignore
-                      }
-                    }}
-                  />
-                </div>
-              </details>
+      {entries.map(([id, override]) => {
+        const toggleId = `override-toggle-${id}`;
+        const panelId = `override-panel-${id}`;
+        const isOpen = expanded === id;
+        return (
+          <div key={id} className="model-card" data-config-path={pathPrefix ? `${pathPrefix}.${id}` : undefined}>
+            <div className="model-card-header">
+              <button
+                type="button"
+                id={toggleId}
+                className="model-card-toggle"
+                aria-expanded={isOpen}
+                aria-controls={panelId}
+                onClick={() => setExpanded(isOpen ? null : id)}
+              >
+                <span className="model-card-title truncate">{id}</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-danger"
+                aria-label={`删除覆盖 ${id}`}
+                onClick={() => removeOverride(id)}
+              >
+                删除
+              </button>
             </div>
-          )}
-        </div>
-      ))}
+
+            {isOpen && (
+              <div
+                className="model-card-body"
+                id={panelId}
+                role="region"
+                aria-labelledby={toggleId}
+              >
+                <div className="form-grid">
+                  <div className="form-field">
+                    <label htmlFor={`override-name-${id}`}>显示名称</label>
+                    <input
+                      id={`override-name-${id}`}
+                      value={override.name ?? ""}
+                      onChange={(e) =>
+                        updateOverride(id, { name: e.target.value || undefined })
+                      }
+                      placeholder="未设置"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label htmlFor={`override-context-${id}`}>上下文窗口</label>
+                    <input
+                      id={`override-context-${id}`}
+                      type="number"
+                      value={override.contextWindow ?? ""}
+                      onChange={(e) =>
+                        updateOverride(id, {
+                          contextWindow: e.target.value
+                            ? Number(e.target.value)
+                            : undefined,
+                        })
+                      }
+                      placeholder="未设置"
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label htmlFor={`override-maxtokens-${id}`}>最大输出 Tokens</label>
+                    <input
+                      id={`override-maxtokens-${id}`}
+                      type="number"
+                      value={override.maxTokens ?? ""}
+                      onChange={(e) =>
+                        updateOverride(id, {
+                          maxTokens: e.target.value
+                            ? Number(e.target.value)
+                            : undefined,
+                        })
+                      }
+                      placeholder="未设置"
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label htmlFor={`override-transport-${id}`}>Transport</label>
+                    <Dropdown
+                      id={`override-transport-${id}`}
+                      value={override.transport ?? ""}
+                      placeholder="未设置"
+                      options={[
+                        { value: "", label: "未设置" },
+                        ...TRANSPORT_TYPES.map((t) => ({ value: t, label: t })),
+                      ]}
+                      onChange={(next) =>
+                        updateOverride(id, {
+                          transport: (next || undefined) as ModelOverride["transport"],
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label htmlFor={`override-reasoning-${id}`}>推理</label>
+                    <Dropdown
+                      id={`override-reasoning-${id}`}
+                      value={readReasoning(override)}
+                      options={REASONING_OPTIONS}
+                      onChange={(next) => {
+                        if (next === "default") {
+                          updateOverride(id, { reasoning: undefined });
+                        } else {
+                          updateOverride(id, { reasoning: next === "true" });
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <KeyValueEditor
+                  label="Headers（可选）"
+                  value={override.headers ?? {}}
+                  onChange={(headers) =>
+                    updateOverride(id, {
+                      headers: Object.keys(headers).filter((k) => k.trim()).length
+                        ? Object.fromEntries(
+                            Object.entries(headers).filter(([k]) => k.trim()),
+                          )
+                        : undefined,
+                    })
+                  }
+                />
+
+                <details className="collapsible">
+                  <summary>thinkingLevelMap JSON</summary>
+                  <div className="collapsible-content">
+                    <label
+                      className="visually-hidden"
+                      htmlFor={`override-thinking-${id}`}
+                    >
+                      thinkingLevelMap JSON
+                    </label>
+                    <textarea
+                      id={`override-thinking-${id}`}
+                      className="json-editor"
+                      style={{ minHeight: 100 }}
+                      value={JSON.stringify(override.thinkingLevelMap ?? {}, null, 2)}
+                      spellCheck={false}
+                      onChange={(e) => {
+                        try {
+                          const parsed = JSON.parse(e.target.value) as Record<
+                            string,
+                            string | null
+                          >;
+                          updateOverride(id, {
+                            thinkingLevelMap:
+                              Object.keys(parsed).length > 0 ? parsed : undefined,
+                          });
+                        } catch {
+                          // ignore
+                        }
+                      }}
+                    />
+                  </div>
+                </details>
+
+                <details className="collapsible">
+                  <summary>compat JSON</summary>
+                  <div className="collapsible-content">
+                    <label className="visually-hidden" htmlFor={`override-compat-${id}`}>
+                      compat JSON
+                    </label>
+                    <textarea
+                      id={`override-compat-${id}`}
+                      className="json-editor"
+                      style={{ minHeight: 120 }}
+                      value={JSON.stringify(override.compat ?? {}, null, 2)}
+                      spellCheck={false}
+                      onChange={(e) => {
+                        try {
+                          const parsed = JSON.parse(e.target.value) as Record<
+                            string,
+                            unknown
+                          >;
+                          updateOverride(id, {
+                            compat: Object.keys(parsed).length ? parsed : undefined,
+                          });
+                        } catch {
+                          // ignore
+                        }
+                      }}
+                    />
+                  </div>
+                </details>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title={`删除覆盖「${pendingDelete}」？`}
+          message="此操作只改内存中的配置，需保存后才会写入磁盘。"
+          confirmLabel="删除"
+          danger
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={confirmRemoveOverride}
+        />
+      )}
     </div>
   );
 }

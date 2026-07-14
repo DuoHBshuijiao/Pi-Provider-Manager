@@ -1,10 +1,14 @@
+import { useId } from "react";
+
 interface Props {
   label: string;
   value: Record<string, string>;
   onChange: (value: Record<string, string>) => void;
+  pathPrefix?: string;
 }
 
-export function KeyValueEditor({ label, value, onChange }: Props) {
+export function KeyValueEditor({ label, value, onChange, pathPrefix }: Props) {
+  const baseId = useId();
   const entries = Object.entries(value);
 
   const update = (index: number, key: string, val: string) => {
@@ -31,32 +35,49 @@ export function KeyValueEditor({ label, value, onChange }: Props) {
   };
 
   return (
-    <div className="form-section">
-      <h3 className="form-section-title">{label}</h3>
-      {entries.map(([k, v], i) => (
-        <div key={`${k}-${i}`} className="kv-row">
-          <div className="form-field">
-            <label>键</label>
-            <input
-              value={k}
-              onChange={(e) => update(i, e.target.value, v)}
-              placeholder="header-name"
-            />
+    <div className={label ? "form-section" : undefined}>
+      {label ? <h3 className="form-section-title">{label}</h3> : null}
+      {entries.length === 0 && (
+        <p className="text-sm text-muted mb-sm">暂无条目。点击下方添加键值对。</p>
+      )}
+      {entries.map(([k, v], i) => {
+        const keyId = `${baseId}-key-${i}`;
+        const valId = `${baseId}-val-${i}`;
+        return (
+          <div key={`${baseId}-${i}`} className="kv-row">
+            <div className="form-field">
+              <label htmlFor={keyId}>键</label>
+              <input
+                id={keyId}
+                data-config-path={pathPrefix ? `${pathPrefix}.${k || i}` : undefined}
+                value={k}
+                onChange={(e) => update(i, e.target.value, v)}
+                placeholder="header-name"
+                autoComplete="off"
+              />
+            </div>
+            <div className="form-field">
+              <label htmlFor={valId}>值</label>
+              <input
+                id={valId}
+                value={v}
+                onChange={(e) => update(i, k, e.target.value)}
+                placeholder="$ENV_VAR 或字面量"
+                className="masked-input"
+                autoComplete="off"
+              />
+            </div>
+            <button
+              type="button"
+              className="btn btn-sm btn-danger"
+              aria-label={`删除键「${k || "空"}」`}
+              onClick={() => remove(i)}
+            >
+              删除
+            </button>
           </div>
-          <div className="form-field">
-            <label>值</label>
-            <input
-              value={v}
-              onChange={(e) => update(i, k, e.target.value)}
-              placeholder="$ENV_VAR 或字面量"
-              className="masked-input"
-            />
-          </div>
-          <button type="button" className="btn btn-sm btn-danger" onClick={() => remove(i)}>
-            删除
-          </button>
-        </div>
-      ))}
+        );
+      })}
       <button type="button" className="btn btn-sm" onClick={add}>
         + 添加
       </button>

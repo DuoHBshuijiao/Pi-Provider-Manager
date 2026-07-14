@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   COMPAT_HELP,
   COMPAT_LABELS,
@@ -11,6 +12,7 @@ interface Props {
   compat: Record<string, unknown> | undefined;
   onChange: (compat: Record<string, unknown>) => void;
   apiType?: string;
+  pathPrefix?: string;
 }
 
 type TriState = "default" | "true" | "false";
@@ -28,9 +30,11 @@ function readTriState(current: Record<string, unknown>, field: string): TriState
   return "default";
 }
 
-export function CompatEditor({ compat, onChange, apiType }: Props) {
+export function CompatEditor({ compat, onChange, apiType, pathPrefix }: Props) {
   const current = compat ?? {};
   const groups = getCompatFieldsForApi(apiType);
+  const [jsonRaw, setJsonRaw] = useState(() => JSON.stringify(current, null, 2));
+  const [jsonError, setJsonError] = useState<string | null>(null);
 
   const setTriState = (field: string, state: TriState) => {
     const next = { ...current };
@@ -42,14 +46,18 @@ export function CompatEditor({ compat, onChange, apiType }: Props) {
       next[field] = false;
     }
     onChange(next);
+    setJsonRaw(JSON.stringify(next, null, 2));
+    setJsonError(null);
   };
 
   const handleJsonChange = (raw: string) => {
+    setJsonRaw(raw);
     try {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
+      setJsonError(null);
       onChange(parsed);
     } catch {
-      // ignore invalid JSON while typing
+      setJsonError("JSON 无效，尚未写入");
     }
   };
 
@@ -64,6 +72,7 @@ export function CompatEditor({ compat, onChange, apiType }: Props) {
         </label>
         <Dropdown
           id={`compat-${field}`}
+          data-config-path={pathPrefix ? `${pathPrefix}.${field}` : undefined}
           value={readTriState(current, field)}
           options={TRI_OPTIONS}
           onChange={(next) => setTriState(field, next as TriState)}
@@ -73,8 +82,7 @@ export function CompatEditor({ compat, onChange, apiType }: Props) {
   };
 
   return (
-    <div className="form-section">
-      <h3 className="form-section-title">兼容性 (compat)</h3>
+    <div>
       <p className="text-sm text-muted mb-sm compat-hint">
         默认 = 不写该字段，交由 Pi 按协议决定。仅在接口报错、代理文档明确要求或排障时覆盖默认值。
       </p>
@@ -94,18 +102,36 @@ export function CompatEditor({ compat, onChange, apiType }: Props) {
         </details>
       )}
 
-      <details className="collapsible">
+      <details
+        className="collapsible"
+        onToggle={(e) => {
+          if ((e.target as HTMLDetailsElement).open && !jsonError) {
+            setJsonRaw(JSON.stringify(current, null, 2));
+          }
+        }}
+      >
         <summary>高级 JSON 编辑</summary>
         <div className="collapsible-content">
           <p className="text-sm text-muted mb-sm">
-            可编辑全部 compat 字段（含 UI 未列出的项）。无效 JSON 不会写入。
+            可编辑全部 compat 字段（含 UI 未列出的项）。
           </p>
+          <label className="visually-hidden" htmlFor="compat-json-editor">
+            compat JSON
+          </label>
           <textarea
-            className="json-editor"
+            id="compat-json-editor"
+            className={`json-editor ${jsonError ? "is-invalid" : ""}`}
             style={{ minHeight: 160 }}
-            value={JSON.stringify(current, null, 2)}
+            value={jsonRaw}
+            spellCheck={false}
+            aria-invalid={Boolean(jsonError) || undefined}
             onChange={(e) => handleJsonChange(e.target.value)}
           />
+          {jsonError && (
+            <p className="field-error" role="alert">
+              {jsonError}
+            </p>
+          )}
         </div>
       </details>
     </div>

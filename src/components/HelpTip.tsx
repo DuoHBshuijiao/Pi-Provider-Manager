@@ -127,6 +127,7 @@ export function HelpTip({ text, label }: Props) {
         aria-label={`${label}说明`}
         aria-expanded={open}
         aria-controls={open ? tipId : undefined}
+        aria-describedby={open ? tipId : undefined}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -142,7 +143,7 @@ export function HelpTip({ text, label }: Props) {
             ref={popRef}
             id={tipId}
             className="help-tip-pop"
-            role="tooltip"
+            role="note"
             style={{
               top: position.top,
               left: position.left,

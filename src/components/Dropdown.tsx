@@ -3,6 +3,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -21,7 +22,11 @@ interface Props {
   onChange: (value: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  searchable?: boolean;
   "aria-label"?: string;
+  "aria-invalid"?: boolean;
+  "aria-describedby"?: string;
+  "data-config-path"?: string;
 }
 
 interface MenuPosition {
@@ -39,19 +44,38 @@ export function Dropdown({
   onChange,
   placeholder = "请选择",
   disabled = false,
+  searchable = false,
   "aria-label": ariaLabel,
+  "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedBy,
+  "data-config-path": dataConfigPath,
 }: Props) {
   const listboxId = useId();
+  const searchId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLUListElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(-1);
+  const [query, setQuery] = useState("");
   const [position, setPosition] = useState<MenuPosition | null>(null);
 
   const selected = options.find((o) => o.value === value);
   const displayLabel = selected?.label ?? placeholder;
   const isPlaceholder = !selected;
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!searchable || !q) return options;
+    return options.filter(
+      (o) =>
+        o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q),
+    );
+  }, [options, query, searchable]);
+
+  const activeOptionId =
+    open && highlight >= 0 ? `${listboxId}-opt-${highlight}` : undefined;
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -60,7 +84,7 @@ export function Dropdown({
     const rect = trigger.getBoundingClientRect();
     const gap = 4;
     const viewportPad = 8;
-    const preferredMax = 240;
+    const preferredMax = searchable ? 280 : 240;
     const spaceBelow = window.innerHeight - rect.bottom - gap - viewportPad;
     const spaceAbove = rect.top - gap - viewportPad;
     const openUp = spaceBelow < 140 && spaceAbove > spaceBelow;
@@ -70,22 +94,24 @@ export function Dropdown({
       top: openUp ? rect.top - gap : rect.bottom + gap,
       left: rect.left,
       width: rect.width,
-      maxHeight: Math.max(120, maxHeight),
+      maxHeight: Math.max(140, maxHeight),
       openUp,
     });
-  }, []);
+  }, [searchable]);
 
   const close = useCallback(() => {
     setOpen(false);
     setHighlight(-1);
+    setQuery("");
   }, []);
 
   const openMenu = useCallback(() => {
-    if (disabled) return;
+    if (disabled || options.length === 0) return;
     const index = Math.max(
       0,
       options.findIndex((o) => o.value === value),
     );
+    setQuery("");
     setHighlight(index);
     setOpen(true);
   }, [disabled, options, value]);
@@ -93,7 +119,10 @@ export function Dropdown({
   useLayoutEffect(() => {
     if (!open) return;
     updatePosition();
-  }, [open, updatePosition]);
+    if (searchable) {
+      requestAnimationFrame(() => searchRef.current?.focus());
+    }
+  }, [open, updatePosition, searchable]);
 
   useEffect(() => {
     if (!open) return;
@@ -136,10 +165,49 @@ export function Dropdown({
     item?.scrollIntoView({ block: "nearest" });
   }, [open, highlight]);
 
+  useEffect(() => {
+    if (!open) return;
+    setHighlight((i) => {
+      if (filtered.length === 0) return -1;
+      if (i < 0) return 0;
+      return Math.min(i, filtered.length - 1);
+    });
+  }, [filtered, open]);
+
   const selectValue = (next: string) => {
     onChange(next);
     close();
     triggerRef.current?.focus();
+  };
+
+  const moveHighlight = (delta: number) => {
+    if (filtered.length === 0) return;
+    setHighlight((i) => {
+      const base = i < 0 ? 0 : i;
+      return (base + delta + filtered.length) % filtered.length;
+    });
+  };
+
+  const onListKeyDown = (event: ReactKeyboardEvent) => {
+    if (filtered.length === 0 && event.key !== "Escape") return;
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveHighlight(1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveHighlight(-1);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      setHighlight(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      setHighlight(filtered.length - 1);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      const option = filtered[highlight];
+      if (option) selectValue(option.value);
+    }
   };
 
   const onTriggerKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -154,34 +222,15 @@ export function Dropdown({
     }
 
     if (!open) return;
-
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setHighlight((i) => (i + 1) % options.length);
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setHighlight((i) => (i <= 0 ? options.length - 1 : i - 1));
-    } else if (event.key === "Home") {
-      event.preventDefault();
-      setHighlight(0);
-    } else if (event.key === "End") {
-      event.preventDefault();
-      setHighlight(options.length - 1);
-    } else if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      const option = options[highlight];
-      if (option) selectValue(option.value);
-    }
+    onListKeyDown(event);
   };
 
   const menu =
     open && position
       ? createPortal(
-          <ul
+          <div
             ref={menuRef}
-            id={listboxId}
             className={`dropdown-menu ${position.openUp ? "dropdown-menu-up" : ""}`}
-            role="listbox"
             style={{
               top: position.openUp ? "auto" : position.top,
               bottom: position.openUp
@@ -192,35 +241,71 @@ export function Dropdown({
               maxHeight: position.maxHeight,
             }}
           >
-            {options.map((option, index) => {
-              const isSelected = option.value === value;
-              const isActive = index === highlight;
-              return (
-                <li
-                  key={`${option.value}-${index}`}
-                  id={`${listboxId}-opt-${index}`}
-                  data-index={index}
-                  role="option"
-                  aria-selected={isSelected}
-                  className={[
-                    "dropdown-option",
-                    isSelected ? "is-selected" : "",
-                    isActive ? "is-active" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  onMouseEnter={() => setHighlight(index)}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    selectValue(option.value);
-                  }}
-                >
-                  <span className="dropdown-option-label">{option.label}</span>
-                  {isSelected && <span className="dropdown-check" aria-hidden="true">✓</span>}
+            {searchable && (
+              <div className="dropdown-search">
+                <label className="visually-hidden" htmlFor={searchId}>
+                  过滤选项
+                </label>
+                <input
+                  ref={searchRef}
+                  id={searchId}
+                  type="search"
+                  className="dropdown-search-input"
+                  value={query}
+                  placeholder="输入以过滤…"
+                  autoComplete="off"
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={onListKeyDown}
+                  onMouseDown={(e) => e.stopPropagation()}
+                />
+              </div>
+            )}
+            <ul
+              id={listboxId}
+              className="dropdown-menu-list"
+              role="listbox"
+              aria-label={ariaLabel ?? placeholder}
+            >
+              {filtered.length === 0 ? (
+                <li className="dropdown-option is-empty" role="presentation">
+                  无匹配项
                 </li>
-              );
-            })}
-          </ul>,
+              ) : (
+                filtered.map((option, index) => {
+                  const isSelected = option.value === value;
+                  const isActive = index === highlight;
+                  return (
+                    <li
+                      key={`${option.value}-${index}`}
+                      id={`${listboxId}-opt-${index}`}
+                      data-index={index}
+                      role="option"
+                      aria-selected={isSelected}
+                      className={[
+                        "dropdown-option",
+                        isSelected ? "is-selected" : "",
+                        isActive ? "is-active" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      onMouseEnter={() => setHighlight(index)}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        selectValue(option.value);
+                      }}
+                    >
+                      <span className="dropdown-option-label">{option.label}</span>
+                      {isSelected && (
+                        <span className="dropdown-check" aria-hidden="true">
+                          ✓
+                        </span>
+                      )}
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          </div>,
           document.body,
         )
       : null;
@@ -233,10 +318,14 @@ export function Dropdown({
         type="button"
         className={`dropdown-trigger ${isPlaceholder ? "is-placeholder" : ""}`}
         disabled={disabled}
+        data-config-path={dataConfigPath}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listboxId : undefined}
+        aria-activedescendant={activeOptionId}
         aria-label={ariaLabel}
+        aria-invalid={ariaInvalid || undefined}
+        aria-describedby={ariaDescribedBy}
         onClick={() => (open ? close() : openMenu())}
         onKeyDown={onTriggerKeyDown}
       >
