@@ -23,6 +23,7 @@ interface Props {
   placeholder?: string;
   disabled?: boolean;
   searchable?: boolean;
+  allowCustom?: boolean;
   "aria-label"?: string;
   "aria-invalid"?: boolean;
   "aria-describedby"?: string;
@@ -45,6 +46,7 @@ export function Dropdown({
   placeholder = "请选择",
   disabled = false,
   searchable = false,
+  allowCustom = false,
   "aria-label": ariaLabel,
   "aria-invalid": ariaInvalid,
   "aria-describedby": ariaDescribedBy,
@@ -62,17 +64,24 @@ export function Dropdown({
   const [position, setPosition] = useState<MenuPosition | null>(null);
 
   const selected = options.find((o) => o.value === value);
-  const displayLabel = selected?.label ?? placeholder;
-  const isPlaceholder = !selected;
+  const displayLabel = selected?.label ?? (value ? value : placeholder);
+  const isPlaceholder = !selected && !value;
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!searchable || !q) return options;
-    return options.filter(
-      (o) =>
-        o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q),
-    );
-  }, [options, query, searchable]);
+    const q = query.trim();
+    let list = options;
+    if (searchable && q) {
+      const lower = q.toLowerCase();
+      list = options.filter(
+        (o) =>
+          o.label.toLowerCase().includes(lower) || o.value.toLowerCase().includes(lower),
+      );
+    }
+    if (allowCustom && q && !options.some((o) => o.value === q)) {
+      list = [...list, { value: q, label: `使用「${q}」` }];
+    }
+    return list;
+  }, [options, query, searchable, allowCustom]);
 
   const activeOptionId =
     open && highlight >= 0 ? `${listboxId}-opt-${highlight}` : undefined;
@@ -106,15 +115,16 @@ export function Dropdown({
   }, []);
 
   const openMenu = useCallback(() => {
-    if (disabled || options.length === 0) return;
+    if (disabled) return;
+    if (options.length === 0 && !allowCustom) return;
     const index = Math.max(
       0,
       options.findIndex((o) => o.value === value),
     );
     setQuery("");
-    setHighlight(index);
+    setHighlight(index < 0 ? 0 : index);
     setOpen(true);
-  }, [disabled, options, value]);
+  }, [disabled, options, value, allowCustom]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -252,7 +262,7 @@ export function Dropdown({
                   type="search"
                   className="dropdown-search-input"
                   value={query}
-                  placeholder="输入以过滤…"
+                  placeholder={allowCustom ? "搜索或输入自定义 ID…" : "输入以过滤…"}
                   autoComplete="off"
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={onListKeyDown}
@@ -268,7 +278,7 @@ export function Dropdown({
             >
               {filtered.length === 0 ? (
                 <li className="dropdown-option is-empty" role="presentation">
-                  无匹配项
+                  {allowCustom ? "输入自定义 ID 后回车" : "无匹配项"}
                 </li>
               ) : (
                 filtered.map((option, index) => {

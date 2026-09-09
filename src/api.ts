@@ -1,10 +1,18 @@
 import type { ModelsConfig } from "@shared/schema";
+import type { BuiltinProviderInfo } from "@shared/builtins";
+import type {
+  FetchRemoteModelsRequest,
+  FetchRemoteModelsResponse,
+} from "@shared/remote-models";
 
 export interface MetaResponse {
   modelsJsonPath: string;
+  authJsonPath: string;
   backupDir: string;
   apiTypes: string[];
   builtinProviders: string[];
+  builtinCatalog: BuiltinProviderInfo[];
+  piVersion: string | null;
 }
 
 export interface ConfigResponse {
@@ -12,6 +20,7 @@ export interface ConfigResponse {
   exists: boolean;
   config: ModelsConfig;
   raw: string;
+  issues: Array<{ path: string; message: string }>;
 }
 
 export interface ValidateResponse {
@@ -79,5 +88,21 @@ export function validateConfig(config: unknown): Promise<ValidateResponse> {
   return request<ValidateResponse>("/api/validate", {
     method: "POST",
     body: JSON.stringify({ config }),
+  });
+}
+
+export function fetchRemoteModels(
+  body: FetchRemoteModelsRequest,
+): Promise<FetchRemoteModelsResponse> {
+  return request<FetchRemoteModelsResponse>("/api/remote-models", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function revealLocalFile(target: "auth" | "models"): Promise<{ ok: boolean; path: string }> {
+  return request<{ ok: boolean; path: string }>("/api/reveal", {
+    method: "POST",
+    body: JSON.stringify({ target }),
   });
 }
