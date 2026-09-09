@@ -7,7 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import type { ModelsConfig, ProviderConfig } from "@shared/schema";
-import { createEmptyConfig } from "@shared/schema";
+import { createEmptyConfig, newlyFilledBuiltinBaseUrls } from "@shared/schema";
 import { fetchConfig, fetchMeta, saveConfig, validateConfig, type MetaResponse } from "./api";
 import { focusConfigPath, providerNameFromPath } from "./focus-path";
 import { ProviderList } from "./components/ProviderList";
@@ -48,6 +48,8 @@ export default function App() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
+  const confirmRef = useRef<PendingConfirm | null>(null);
+  confirmRef.current = confirm;
   const [validationIssues, setValidationIssues] = useState<
     Array<{ path: string; message: string }>
   >([]);
@@ -61,20 +63,37 @@ export default function App() {
     setSuccess(null);
     setSuccessBackup(null);
     setLoadFailed(false);
+    setValidationIssues([]);
     try {
-      const [metaRes, configRes] = await Promise.all([fetchMeta(), fetchConfig()]);
-      setMeta(metaRes);
-      setConfig(configRes.config);
-      setSavedConfig(configRes.config);
-      setFileExists(configRes.exists);
+      const [metaResult, configResult] = await Promise.allSettled([
+        fetchMeta(),
+        fetchConfig(),
+      ]);
 
-      if (!preserveSelection) {
-        const providers = Object.keys(configRes.config.providers);
-        setSelectedProvider((current) => current ?? providers[0] ?? null);
+      if (metaResult.status === "fulfilled") {
+        setMeta(metaResult.value);
       }
-    } catch (err) {
-      setLoadFailed(true);
-      setError(err instanceof Error ? err.message : "加载失败");
+
+      if (configResult.status === "fulfilled") {
+        const configRes = configResult.value;
+        setConfig(configRes.config);
+        setSavedConfig(configRes.config);
+        setFileExists(configRes.exists);
+        const issues = configRes.issues ?? [];
+        setValidationIssues(issues);
+        if (issues.length > 0) {
+          setError("当前配置未通过校验，可在界面中修正后再保存");
+        }
+
+        if (!preserveSelection) {
+          const providers = Object.keys(configRes.config.providers);
+          setSelectedProvider((current) => current ?? providers[0] ?? null);
+        }
+      } else {
+        setLoadFailed(true);
+        const reason = configResult.reason;
+        setError(reason instanceof Error ? reason.message : "加载失败");
+      }
     } finally {
       setLoading(false);
     }
@@ -109,8 +128,8 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [isDirty]);
 
-  const handleSave = useCallback(async () => {
-    if (saving || !isDirty) return;
+  const persistConfig = useCallback(async () => {
+    if (saving) return;
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -136,7 +155,30 @@ export default function App() {
     } finally {
       setSaving(false);
     }
-  }, [saving, isDirty, config]);
+  }, [saving, config]);
+
+  const handleSave = useCallback(() => {
+    if (saving || !isDirty || confirmRef.current) return;
+    const overrides = newlyFilledBuiltinBaseUrls(
+      savedConfig,
+      config,
+      meta?.builtinProviders,
+    );
+    if (overrides.length > 0) {
+      setConfirm({
+        title: "覆盖内建地址？",
+        message: `为 ${overrides.map((n) => `「${n}」`).join("、")} 填写 Base URL 会覆盖 Pi 内建的官方根地址。本供应商下所有模型（含内建列表和追加模型）都将走这个地址。确定保存？`,
+        confirmLabel: "覆盖并保存",
+        danger: true,
+        onConfirm: () => {
+          setConfirm(null);
+          void persistConfig();
+        },
+      });
+      return;
+    }
+    void persistConfig();
+  }, [saving, isDirty, savedConfig, config, persistConfig, meta?.builtinProviders]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -255,7 +297,7 @@ export default function App() {
     );
   }
 
-  if (loadFailed && !meta) {
+  if (loadFailed) {
     return (
       <div className="app">
         <a href="#main-content" className="skip-link">
@@ -265,6 +307,12 @@ export default function App() {
           <div>
             <h1 className="brand">Pi Provider Manager</h1>
             <p className="subtitle">管理本地 Pi Agent 的 models.json</p>
+            {meta && (
+              <p className="path-hint" title={meta.modelsJsonPath}>
+                <span className="visually-hidden">配置文件路径：</span>
+                {meta.modelsJsonPath}
+              </p>
+            )}
           </div>
         </header>
         <div
@@ -275,6 +323,9 @@ export default function App() {
           tabIndex={-1}
         >
           <p className="mb-sm">{error ?? "加载失败"}</p>
+          <p className="text-sm mb-sm">
+            JSON 语法错误或读盘失败时无法进入编辑界面。请先修正磁盘上的文件后再重试。
+          </p>
           <button type="button" className="btn btn-sm btn-primary" onClick={() => void load()}>
             重试
           </button>
@@ -316,7 +367,7 @@ export default function App() {
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => void handleSave()}
+            onClick={() => handleSave()}
             disabled={saving || !isDirty}
             aria-busy={saving}
             title="Ctrl+S / ⌘S"
@@ -452,6 +503,7 @@ export default function App() {
                   config={config}
                   selected={selectedProvider}
                   onSelect={setSelectedProvider}
+                  builtinIds={meta?.builtinProviders}
                 />
               </aside>
 
@@ -477,8 +529,9 @@ export default function App() {
                       key={selectedProvider}
                       name={selectedProvider}
                       provider={currentProvider}
-                      builtinProviders={meta?.builtinProviders ?? []}
+                      builtinCatalog={meta?.builtinCatalog ?? []}
                       apiTypes={meta?.apiTypes ?? []}
+                      authJsonPath={meta?.authJsonPath}
                       onChange={(p) => handleProviderChange(selectedProvider, p)}
                     />
                   </div>
@@ -512,7 +565,7 @@ export default function App() {
 
       {showNewModal && meta && (
         <NewProviderModal
-          builtinProviders={meta.builtinProviders}
+          builtinCatalog={meta.builtinCatalog}
           apiTypes={meta.apiTypes}
           existingNames={Object.keys(config.providers)}
           onClose={() => setShowNewModal(false)}

@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import type { ProviderConfig } from "@shared/schema";
-import { isBuiltinProvider } from "@shared/builtins";
+import {
+  findCatalogProvider,
+  type BuiltinProviderInfo,
+} from "@shared/builtins";
+import { revealLocalFile } from "../api";
 import { KeyValueEditor } from "./KeyValueEditor";
 import { CompatEditor } from "./CompatEditor";
 import { ModelEditor } from "./ModelEditor";
@@ -10,8 +14,9 @@ import { Dropdown } from "./Dropdown";
 interface Props {
   name: string;
   provider: ProviderConfig;
-  builtinProviders: string[];
+  builtinCatalog: BuiltinProviderInfo[];
   apiTypes: string[];
+  authJsonPath?: string;
   onChange: (provider: ProviderConfig) => void;
 }
 
@@ -40,19 +45,30 @@ function countEntries(record: Record<string, unknown> | undefined): number {
   return record ? Object.keys(record).length : 0;
 }
 
+function fieldId(providerName: string, field: string): string {
+  return `provider-${field}-${providerName.replace(/[^A-Za-z0-9_-]+/g, "-")}`;
+}
+
 export function ProviderEditor({
   name,
   provider,
-  builtinProviders,
+  builtinCatalog,
   apiTypes,
+  authJsonPath,
   onChange,
 }: Props) {
-  const builtin = isBuiltinProvider(name);
+  const builtinMeta = findCatalogProvider(builtinCatalog, name);
+  const builtin = Boolean(builtinMeta);
   const headerCount = countEntries(provider.headers);
   const compatCount = countEntries(
     provider.compat as Record<string, unknown> | undefined,
   );
   const pathPrefix = `providers.${name}`;
+  const baseUrlId = fieldId(name, "base-url");
+  const apiTypeId = fieldId(name, "api-type");
+  const apiKeyId = fieldId(name, "api-key");
+  const authHeaderId = fieldId(name, "auth-header");
+  const extraJsonId = fieldId(name, "extra-json");
   const syncedExtra = JSON.stringify(extraFields(provider), null, 2);
 
   const [showApiKey, setShowApiKey] = useState(false);
@@ -87,12 +103,41 @@ export function ProviderEditor({
     }
   };
 
+  const openAuthJson = async () => {
+    if (authJsonPath) {
+      try {
+        await navigator.clipboard.writeText(authJsonPath);
+      } catch {
+        // ignore clipboard failures
+      }
+    }
+    try {
+      await revealLocalFile("auth");
+    } catch {
+      // explorer 可能仍会打开；剪贴板已尽量写入
+    }
+  };
+
   return (
     <div>
       {builtin && (
         <div className="alert alert-warning mb-md" role="status">
-          内建 Provider：<code>models</code> 中同 ID 会替换 Pi 内建模型；只想改内建模型属性，请使用{" "}
-          <code>modelOverrides</code>。
+          <p className="mb-xs">
+            登录配置：
+            {authJsonPath ? (
+              <button
+                type="button"
+                className="path-link"
+                title="复制路径并在资源管理器中打开"
+                onClick={() => void openAuthJson()}
+              >
+                {authJsonPath}
+              </button>
+            ) : (
+              <code>~/.pi/agent/auth.json</code>
+            )}
+          </p>
+          <p className="mb-0">填写 Base URL 或 API Key 会覆盖 Pi 内建设置。</p>
         </div>
       )}
 
@@ -107,28 +152,56 @@ export function ProviderEditor({
             </p>
           </div>
           <div className="form-field full">
-            <label htmlFor="provider-base-url">
+            <label htmlFor={baseUrlId}>
               Base URL {builtin ? "(可选，用于代理)" : "*"}
             </label>
             <input
-              id="provider-base-url"
+              id={baseUrlId}
+              name={baseUrlId}
               data-config-path={`${pathPrefix}.baseUrl`}
               value={provider.baseUrl ?? ""}
               onChange={(e) => patch({ baseUrl: e.target.value || undefined })}
-              placeholder="https://api.example.com/v1"
-              autoComplete="off"
+              placeholder={
+                builtin
+                  ? builtinMeta?.baseUrl
+                    ? `留空则继承 ${builtinMeta.baseUrl}`
+                    : "留空则继承 Pi 内建地址"
+                  : "https://api.example.com/v1"
+              }
+              autoComplete="url"
+              inputMode="url"
               aria-required={!builtin || undefined}
             />
+            {builtin && (
+              <p className="text-sm text-muted mt-xs">
+                {builtinMeta?.baseUrl
+                  ? `留空则继承 ${builtinMeta.baseUrl}${builtinMeta.api ? `（${builtinMeta.api}）` : ""}。只有走代理时才需要填写。`
+                  : "留空则继承 Pi 内建的官方地址。只有走代理时才需要填写。"}
+              </p>
+            )}
           </div>
           <div className="form-field">
-            <label htmlFor="provider-api-type">API 类型 {!builtin ? "*" : ""}</label>
+            <label htmlFor={apiTypeId}>API 类型 {!builtin ? "*" : ""}</label>
             <Dropdown
-              id="provider-api-type"
+              id={apiTypeId}
               data-config-path={`${pathPrefix}.api`}
               value={provider.api ?? ""}
-              placeholder={builtin ? "使用内建默认" : "选择 API 类型"}
+              placeholder={
+                builtin
+                  ? builtinMeta?.api
+                    ? `使用内建默认（${builtinMeta.api}）`
+                    : "使用内建默认"
+                  : "选择 API 类型"
+              }
               options={[
-                { value: "", label: builtin ? "使用内建默认" : "选择 API 类型" },
+                {
+                  value: "",
+                  label: builtin
+                    ? builtinMeta?.api
+                      ? `使用内建默认（${builtinMeta.api}）`
+                      : "使用内建默认"
+                    : "选择 API 类型",
+                },
                 ...apiTypes.map((t) => ({ value: t, label: t })),
               ]}
               onChange={(next) =>
@@ -137,32 +210,42 @@ export function ProviderEditor({
             />
           </div>
           <div className="form-field">
-            <label htmlFor="provider-api-key">API Key</label>
+            <label htmlFor={apiKeyId}>API Key</label>
             <div className="input-group">
               <input
-                id="provider-api-key"
+                id={apiKeyId}
+                name={apiKeyId}
                 data-config-path={`${pathPrefix}.apiKey`}
                 type={showApiKey ? "text" : "password"}
                 value={provider.apiKey ?? ""}
                 onChange={(e) => patch({ apiKey: e.target.value || undefined })}
-                placeholder="$ENV_VAR 或 sk-..."
+                placeholder={
+                  builtin
+                    ? "留空则使用 Pi /login（auth.json）或环境变量"
+                    : "$ENV_VAR 或 sk-..."
+                }
                 className="masked-input"
-                autoComplete="off"
+                autoComplete="new-password"
               />
               <button
                 type="button"
                 className="btn btn-sm"
                 aria-pressed={showApiKey}
-                aria-controls="provider-api-key"
+                aria-controls={apiKeyId}
                 onClick={() => setShowApiKey(!showApiKey)}
               >
                 {showApiKey ? "隐藏" : "显示"}
               </button>
             </div>
+            {builtin && (
+              <p className="text-sm text-muted mt-xs">
+                留空即可。密钥来自 Pi 的 <code>/login</code>，不是 models.json。
+              </p>
+            )}
           </div>
-          <label className="checkbox-row" htmlFor="provider-auth-header">
+          <label className="checkbox-row" htmlFor={authHeaderId}>
             <input
-              id="provider-auth-header"
+              id={authHeaderId}
               data-config-path={`${pathPrefix}.authHeader`}
               type="checkbox"
               checked={provider.authHeader ?? false}
@@ -229,6 +312,14 @@ export function ProviderEditor({
         models={provider.models ?? []}
         apiTypes={apiTypes}
         pathPrefix={`${pathPrefix}.models`}
+        remote={{
+          providerName: name,
+          baseUrl: provider.baseUrl,
+          api: provider.api,
+          apiKey: provider.apiKey,
+          headers: provider.headers,
+          authHeader: provider.authHeader,
+        }}
         onChange={(models) => patch({ models: models.length ? models : undefined })}
       />
 
@@ -236,6 +327,7 @@ export function ProviderEditor({
         <ModelOverridesEditor
           overrides={provider.modelOverrides ?? {}}
           pathPrefix={`${pathPrefix}.modelOverrides`}
+          catalogModels={builtinMeta?.models ?? []}
           onChange={(modelOverrides) =>
             patch({
               modelOverrides: Object.keys(modelOverrides).length
@@ -252,11 +344,11 @@ export function ProviderEditor({
           <p className="text-sm text-muted mb-sm">
             仅编辑未知/额外字段；表单已管理的键不会被此处删除。
           </p>
-          <label className="visually-hidden" htmlFor="provider-extra-json">
+          <label className="visually-hidden" htmlFor={extraJsonId}>
             Provider 高级字段 JSON
           </label>
           <textarea
-            id="provider-extra-json"
+            id={extraJsonId}
             className={`json-editor ${extraError ? "is-invalid" : ""}`}
             style={{ minHeight: 120 }}
             value={extraRaw}
@@ -272,7 +364,7 @@ export function ProviderEditor({
         </div>
       </details>
 
-      {!builtin && !builtinProviders.includes(name) && (
+      {!builtin && (
         <p className="text-sm text-muted">
           提示：第三方 Provider 需配置 baseUrl 与 api 类型。
         </p>

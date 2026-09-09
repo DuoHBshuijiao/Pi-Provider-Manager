@@ -1,12 +1,13 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { ProviderConfig } from "@shared/schema";
 import { createDefaultProvider } from "@shared/schema";
+import { builtinProviderLabel, type BuiltinProviderInfo } from "@shared/builtins";
 import { Dropdown } from "./Dropdown";
 
 type Mode = "third-party" | "builtin";
 
 interface Props {
-  builtinProviders: string[];
+  builtinCatalog: BuiltinProviderInfo[];
   apiTypes: string[];
   existingNames: string[];
   onClose: () => void;
@@ -17,7 +18,7 @@ const FOCUSABLE =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function NewProviderModal({
-  builtinProviders,
+  builtinCatalog,
   apiTypes,
   existingNames,
   onClose,
@@ -29,7 +30,7 @@ export function NewProviderModal({
   const previouslyFocused = useRef<HTMLElement | null>(null);
   const [mode, setMode] = useState<Mode>("third-party");
   const [name, setName] = useState("");
-  const [builtinName, setBuiltinName] = useState(builtinProviders[0] ?? "anthropic");
+  const [builtinName, setBuiltinName] = useState(builtinCatalog[0]?.id ?? "anthropic");
   const [baseUrl, setBaseUrl] = useState("");
   const [api, setApi] = useState(apiTypes[0] ?? "openai-completions");
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +104,8 @@ export function NewProviderModal({
       return;
     }
 
+    const provider = createDefaultProvider();
+
     if (mode === "third-party") {
       const url = baseUrl.trim();
       if (!url) {
@@ -112,21 +115,20 @@ export function NewProviderModal({
       try {
         const candidate = url.includes("://") ? url : `https://${url}`;
         const parsed = new URL(candidate);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          setError("Base URL 格式无效，请使用完整地址（如 https://api.example.com/v1）");
+          return;
+        }
         if (!parsed.hostname) {
           setError("Base URL 格式无效，请使用完整地址（如 https://api.example.com/v1）");
           return;
         }
+        provider.baseUrl = candidate;
+        provider.api = api as ProviderConfig["api"];
       } catch {
         setError("Base URL 格式无效，请使用完整地址（如 https://api.example.com/v1）");
         return;
       }
-    }
-
-    const provider = createDefaultProvider();
-
-    if (mode === "third-party") {
-      provider.baseUrl = baseUrl.trim();
-      provider.api = api as ProviderConfig["api"];
     } else {
       delete provider.baseUrl;
       delete provider.api;
@@ -214,13 +216,17 @@ export function NewProviderModal({
               <Dropdown
                 id="provider-builtin"
                 value={builtinName}
-                options={builtinProviders.map((p) => ({ value: p, label: p }))}
+                options={builtinCatalog.map((provider) => ({
+                  value: provider.id,
+                  label: builtinProviderLabel(provider.id, builtinCatalog),
+                }))}
                 onChange={setBuiltinName}
-                disabled={builtinProviders.length === 0}
+                disabled={builtinCatalog.length === 0}
                 searchable
               />
               <p className="text-sm text-muted mt-xs" id="builtin-hint">
-                可为内建 Provider 追加 models 或设置 modelOverrides，无需重新定义全部模型。
+                可为内建 Provider 追加 models 或设置 modelOverrides。Base URL 与 API Key 请留空，在 Pi
+                里用 /login 登录该供应商。
               </p>
             </div>
           )}
