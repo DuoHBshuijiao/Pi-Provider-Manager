@@ -3,6 +3,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { getEffectiveCatalog } from "./pi-catalog.js";
 import { api } from "./routes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -27,5 +28,8 @@ serve(
   },
   (info) => {
     console.log(`Pi Provider Manager API running on http://127.0.0.1:${info.port}`);
+    void getEffectiveCatalog().catch((error) => {
+      console.warn("[pi-catalog] startup sync failed:", error);
+    });
   },
 );
