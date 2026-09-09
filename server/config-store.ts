@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -5,17 +6,49 @@ import { randomBytes } from "node:crypto";
 import {
   createEmptyConfig,
   type ModelsConfig,
+  type ValidationIssue,
   validateModelsConfig,
 } from "../shared/schema.js";
 
+export function resolveAgentDir(): string {
+  return path.join(os.homedir(), ".pi", "agent");
+}
+
 export function resolveModelsJsonPath(): string {
-  const home = os.homedir();
-  return path.join(home, ".pi", "agent", "models.json");
+  return path.join(resolveAgentDir(), "models.json");
+}
+
+export function resolveAuthJsonPath(): string {
+  return path.join(resolveAgentDir(), "auth.json");
 }
 
 export function resolveBackupDir(): string {
-  const home = os.homedir();
-  return path.join(home, ".pi", "agent", "backups");
+  return path.join(resolveAgentDir(), "backups");
+}
+
+export type RevealTarget = "auth" | "models";
+
+export function resolveRevealPath(target: RevealTarget): string {
+  return target === "auth" ? resolveAuthJsonPath() : resolveModelsJsonPath();
+}
+
+/** Open a known agent file in the OS file manager. Rejects paths outside ~/.pi/agent. */
+export function revealAgentFile(target: RevealTarget): string {
+  const filePath = path.resolve(resolveRevealPath(target));
+  const agentDir = path.resolve(resolveAgentDir());
+  const relative = path.relative(agentDir, filePath);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error("拒绝打开该路径");
+  }
+
+  if (process.platform === "win32") {
+    spawn("explorer", [`/select,${filePath}`], { detached: true, stdio: "ignore" }).unref();
+  } else if (process.platform === "darwin") {
+    spawn("open", ["-R", filePath], { detached: true, stdio: "ignore" }).unref();
+  } else {
+    spawn("xdg-open", [path.dirname(filePath)], { detached: true, stdio: "ignore" }).unref();
+  }
+  return filePath;
 }
 
 function formatBackupName(): string {
@@ -40,6 +73,23 @@ export interface ConfigReadResult {
   exists: boolean;
   config: ModelsConfig;
   raw: string;
+  issues: ValidationIssue[];
+}
+
+/** JSON 可解析但 schema 未通过时，尽量还原成可编辑的配置，避免启动整页锁死。 */
+function coerceModelsConfig(parsed: unknown): ModelsConfig | null {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  const record = parsed as Record<string, unknown>;
+  const providers = record.providers;
+  if (providers === undefined) {
+    return { ...record, providers: {} } as ModelsConfig;
+  }
+  if (typeof providers !== "object" || providers === null || Array.isArray(providers)) {
+    return null;
+  }
+  return parsed as ModelsConfig;
 }
 
 export async function readConfig(): Promise<ConfigReadResult> {
@@ -47,10 +97,17 @@ export async function readConfig(): Promise<ConfigReadResult> {
 
   try {
     const raw = await fs.readFile(filePath, "utf-8");
-    const parsed = JSON.parse(raw) as unknown;
-    const validation = validateModelsConfig(parsed);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw) as unknown;
+    } catch {
+      throw new Error("models.json 不是合法 JSON，请检查括号、逗号与引号");
+    }
 
-    if (!validation.success || !validation.data) {
+    const validation = validateModelsConfig(parsed);
+    const config = validation.data ?? coerceModelsConfig(parsed);
+
+    if (!config) {
       throw new Error(
         validation.issues.map((i) => `${i.path}: ${i.message}`).join("; ") ||
           "配置格式无效",
@@ -60,8 +117,9 @@ export async function readConfig(): Promise<ConfigReadResult> {
     return {
       path: filePath,
       exists: true,
-      config: validation.data,
+      config,
       raw,
+      issues: validation.success ? [] : validation.issues,
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
@@ -70,6 +128,7 @@ export async function readConfig(): Promise<ConfigReadResult> {
         exists: false,
         config: createEmptyConfig(),
         raw: JSON.stringify(createEmptyConfig(), null, 2),
+        issues: [],
       };
     }
     throw error;
