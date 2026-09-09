@@ -1,6 +1,6 @@
-import { useId, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import type { ModelOverride } from "@shared/schema";
-import { TRANSPORT_TYPES } from "@shared/builtins";
+import { TRANSPORT_TYPES, builtinModelLabel, type BuiltinModelInfo } from "@shared/builtins";
 import { Dropdown } from "./Dropdown";
 import { KeyValueEditor } from "./KeyValueEditor";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -9,6 +9,7 @@ interface Props {
   overrides: Record<string, ModelOverride>;
   onChange: (overrides: Record<string, ModelOverride>) => void;
   pathPrefix?: string;
+  catalogModels?: readonly BuiltinModelInfo[];
 }
 
 type TriState = "default" | "true" | "false";
@@ -25,7 +26,12 @@ function readReasoning(override: ModelOverride): TriState {
   return "default";
 }
 
-export function ModelOverridesEditor({ overrides, onChange, pathPrefix }: Props) {
+export function ModelOverridesEditor({
+  overrides,
+  onChange,
+  pathPrefix,
+  catalogModels = [],
+}: Props) {
   const newIdField = useId();
   const errorId = useId();
   const [newId, setNewId] = useState("");
@@ -34,6 +40,14 @@ export function ModelOverridesEditor({ overrides, onChange, pathPrefix }: Props)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   const entries = Object.entries(overrides);
+  const usePicker = catalogModels.length > 0;
+  const pickerOptions = useMemo(
+    () =>
+      catalogModels
+        .filter((model) => !overrides[model.id])
+        .map((model) => ({ value: model.id, label: builtinModelLabel(model) })),
+    [catalogModels, overrides],
+  );
 
   const updateOverride = (id: string, patch: Partial<ModelOverride>) => {
     onChange({
@@ -56,8 +70,8 @@ export function ModelOverridesEditor({ overrides, onChange, pathPrefix }: Props)
     setPendingDelete(null);
   };
 
-  const addOverride = () => {
-    const id = newId.trim();
+  const addOverride = (rawId = newId) => {
+    const id = rawId.trim();
     setAddError(null);
     if (!id) {
       setAddError("请填写要覆盖的模型 ID");
@@ -77,28 +91,46 @@ export function ModelOverridesEditor({ overrides, onChange, pathPrefix }: Props)
     <div className="form-section">
       <h3 className="form-section-title">模型覆盖 (modelOverrides)</h3>
       <p className="text-sm text-muted mb-sm">
-        覆盖内建或扩展模型的属性，无需替换完整模型列表。只写需要改的字段。模型 ID
-        请按供应商文档手填（各家命名不同，无法自动穷举）。
+        覆盖内建或扩展模型的属性，无需替换完整模型列表。只写需要改的字段。可从内建模型中选择，也可输入自定义
+        ID。
       </p>
 
       <div className="input-group mb-sm">
         <label className="visually-hidden" htmlFor={newIdField}>
           要覆盖的模型 ID
         </label>
-        <input
-          id={newIdField}
-          value={newId}
-          onChange={(e) => {
-            setNewId(e.target.value);
-            if (addError) setAddError(null);
-          }}
-          placeholder="内建模型 ID，如 gpt-5.6-sol"
-          aria-invalid={Boolean(addError) || undefined}
-          aria-describedby={addError ? errorId : undefined}
-          onKeyDown={(e) => e.key === "Enter" && addOverride()}
-          autoComplete="off"
-        />
-        <button type="button" className="btn btn-sm btn-primary" onClick={addOverride}>
+        {usePicker ? (
+          <Dropdown
+            id={newIdField}
+            value={newId}
+            placeholder="选择内建模型 ID"
+            options={pickerOptions}
+            searchable
+            allowCustom
+            aria-invalid={Boolean(addError) || undefined}
+            aria-describedby={addError ? errorId : undefined}
+            onChange={(next) => {
+              setNewId(next);
+              if (addError) setAddError(null);
+              addOverride(next);
+            }}
+          />
+        ) : (
+          <input
+            id={newIdField}
+            value={newId}
+            onChange={(e) => {
+              setNewId(e.target.value);
+              if (addError) setAddError(null);
+            }}
+            placeholder="模型 ID"
+            aria-invalid={Boolean(addError) || undefined}
+            aria-describedby={addError ? errorId : undefined}
+            onKeyDown={(e) => e.key === "Enter" && addOverride()}
+            autoComplete="off"
+          />
+        )}
+        <button type="button" className="btn btn-sm btn-primary" onClick={() => addOverride()}>
           添加覆盖
         </button>
       </div>

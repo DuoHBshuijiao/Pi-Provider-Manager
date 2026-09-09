@@ -1,16 +1,17 @@
 import { useMemo, useState } from "react";
 import type { ModelsConfig } from "@shared/schema";
-import { isBuiltinProvider } from "@shared/builtins";
 
 interface Props {
   config: ModelsConfig;
   selected: string | null;
   onSelect: (name: string) => void;
+  builtinIds?: readonly string[];
 }
 
-export function ProviderList({ config, selected, onSelect }: Props) {
+export function ProviderList({ config, selected, onSelect, builtinIds = [] }: Props) {
   const [filter, setFilter] = useState("");
   const names = Object.keys(config.providers).sort();
+  const builtinSet = useMemo(() => new Set(builtinIds), [builtinIds]);
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -62,7 +63,7 @@ export function ProviderList({ config, selected, onSelect }: Props) {
         <ul className="provider-list" aria-label="已配置的 Providers">
           {filtered.map((name) => {
             const provider = config.providers[name]!;
-            const builtin = isBuiltinProvider(name);
+            const builtin = builtinSet.has(name);
             const modelCount = provider.models?.length ?? 0;
             const overrideCount = Object.keys(provider.modelOverrides ?? {}).length;
             const isSelected = selected === name;

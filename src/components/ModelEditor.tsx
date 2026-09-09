@@ -1,7 +1,16 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ModelDefinition } from "@shared/schema";
 import { createDefaultModel } from "@shared/schema";
 import { TRANSPORT_TYPES } from "@shared/builtins";
+import {
+  applyRemoteModelHint,
+  catalogFetchBlockReason,
+  formatRemoteModelLabel,
+  resolveProviderBaseUrl,
+  type FetchRemoteModelsRequest,
+  type RemoteModelHint,
+} from "@shared/remote-models";
+import { fetchRemoteModels } from "../api";
 import { Dropdown } from "./Dropdown";
 import { KeyValueEditor } from "./KeyValueEditor";
 import { HelpTip } from "./HelpTip";
@@ -12,6 +21,7 @@ interface Props {
   apiTypes: string[];
   onChange: (models: ModelDefinition[]) => void;
   pathPrefix?: string;
+  remote?: FetchRemoteModelsRequest;
 }
 
 type TriState = "default" | "true" | "false";
@@ -71,10 +81,48 @@ function extraFields(model: ModelDefinition): Record<string, unknown> {
   return extra;
 }
 
-export function ModelEditor({ models, apiTypes, onChange, pathPrefix }: Props) {
+function scopedId(pathPrefix: string | undefined, ...parts: Array<string | number>): string {
+  return ["model", pathPrefix || "root", ...parts]
+    .join("-")
+    .replace(/[^A-Za-z0-9_-]+/g, "-");
+}
+
+export function ModelEditor({ models, apiTypes, onChange, pathPrefix, remote }: Props) {
   const [expanded, setExpanded] = useState<number | null>(0);
   const [jsonErrors, setJsonErrors] = useState<Record<string, string>>({});
   const [pendingDelete, setPendingDelete] = useState<number | null>(null);
+  const [catalog, setCatalog] = useState<RemoteModelHint[]>([]);
+  const [catalogUrl, setCatalogUrl] = useState<string | null>(null);
+  const [catalogDialect, setCatalogDialect] = useState<string | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+
+  const remoteFingerprint = [
+    remote?.providerName,
+    remote?.baseUrl,
+    remote?.api,
+    remote?.apiKey,
+    remote?.authHeader,
+    JSON.stringify(remote?.headers ?? {}),
+  ].join("\0");
+
+  useEffect(() => {
+    setCatalog([]);
+    setCatalogUrl(null);
+    setCatalogDialect(null);
+    setCatalogError(null);
+  }, [remoteFingerprint]);
+
+  const resolvedCatalogRoot = resolveProviderBaseUrl(remote?.providerName, remote?.baseUrl);
+  const catalogBlockReason = catalogFetchBlockReason(remote?.providerName, remote?.baseUrl);
+  const catalogOptions = useMemo(
+    () =>
+      catalog.map((hint) => ({
+        value: hint.id,
+        label: formatRemoteModelLabel(hint),
+      })),
+    [catalog],
+  );
 
   const updateModel = (index: number, patch: Partial<ModelDefinition>) => {
     const next = models.map((m, i) => (i === index ? { ...m, ...patch } : m));
@@ -97,6 +145,50 @@ export function ModelEditor({ models, apiTypes, onChange, pathPrefix }: Props) {
     const model = { ...createDefaultModel(), ...template };
     onChange([...models, model]);
     setExpanded(models.length);
+  };
+
+  const applyHintToIndex = (index: number, hint: RemoteModelHint) => {
+    onChange(
+      models.map((model, i) => (i === index ? applyRemoteModelHint(model, hint) : model)),
+    );
+    setExpanded(index);
+  };
+
+  const addOrApplyHint = (hint: RemoteModelHint) => {
+    const existing = models.findIndex((model) => model.id === hint.id);
+    if (existing >= 0) {
+      applyHintToIndex(existing, hint);
+      return;
+    }
+    const blank = models.findIndex((model) => !model.id.trim());
+    if (blank >= 0) {
+      applyHintToIndex(blank, hint);
+      return;
+    }
+    onChange([...models, applyRemoteModelHint(createDefaultModel(), hint)]);
+    setExpanded(models.length);
+  };
+
+  const loadCatalog = async () => {
+    if (!remote || catalogLoading || catalogBlockReason) return;
+    setCatalogLoading(true);
+    setCatalogError(null);
+    try {
+      const result = await fetchRemoteModels(remote);
+      setCatalog(result.models);
+      setCatalogUrl(result.url);
+      setCatalogDialect(result.dialect);
+      if (result.models.length === 0) {
+        setCatalogError("目录可访问，但没有识别到可用的对话模型");
+      }
+    } catch (err) {
+      setCatalog([]);
+      setCatalogUrl(null);
+      setCatalogDialect(null);
+      setCatalogError(err instanceof Error ? err.message : "拉取云端模型失败");
+    } finally {
+      setCatalogLoading(false);
+    }
   };
 
   const mergeExtra = (index: number, raw: string) => {
@@ -134,6 +226,19 @@ export function ModelEditor({ models, apiTypes, onChange, pathPrefix }: Props) {
           <button
             type="button"
             className="btn btn-sm"
+            disabled={catalogLoading || Boolean(catalogBlockReason)}
+            title={
+              catalogBlockReason
+                ? catalogBlockReason
+                : `GET ${resolvedCatalogRoot}/models（凭证优先用 Pi /login 的 auth.json）`
+            }
+            onClick={() => void loadCatalog()}
+          >
+            {catalogLoading ? "拉取中…" : "从云端拉取"}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
             title="预填常见 Ollama 本地模型字段，可再按实际模型名修改"
             onClick={() =>
               addModel({
@@ -150,6 +255,47 @@ export function ModelEditor({ models, apiTypes, onChange, pathPrefix }: Props) {
           </button>
         </div>
       </div>
+
+      {(catalogError || catalogUrl) && (
+        <div
+          className={`alert ${catalogError ? "alert-error" : "alert-info"} mb-sm`}
+          role={catalogError ? "alert" : "status"}
+        >
+          {catalogError ? (
+            catalogError
+          ) : (
+            <>
+              已获取 {catalog.length} 个模型
+              {catalogDialect ? `（${catalogDialect}）` : ""}
+              {catalogUrl ? (
+                <>
+                  ，来源 <code>{catalogUrl}</code>
+                </>
+              ) : null}
+            </>
+          )}
+        </div>
+      )}
+
+      {catalog.length > 0 && (
+        <div className="form-field full mb-sm">
+          <label htmlFor={scopedId(pathPrefix, "remote-catalog")}>从云端目录选择</label>
+          <Dropdown
+            id={scopedId(pathPrefix, "remote-catalog")}
+            searchable
+            value=""
+            placeholder="搜索并填入 ID / 名称 / 模态"
+            options={catalogOptions}
+            onChange={(id) => {
+              const hint = catalog.find((item) => item.id === id);
+              if (hint) addOrApplyHint(hint);
+            }}
+          />
+          <p className="text-sm text-muted mt-xs mb-0">
+            选择后自动填入 id、显示名，并尽量写入多模态、思考、上下文窗口与价格。已存在的 ID 会更新当前条目。
+          </p>
+        </div>
+      )}
 
       {models.length === 0 && (
         <p className="text-sm text-muted">
@@ -209,6 +355,22 @@ export function ModelEditor({ models, apiTypes, onChange, pathPrefix }: Props) {
                     autoComplete="off"
                   />
                 </div>
+                {catalog.length > 0 && (
+                  <div className="form-field">
+                    <label htmlFor={`model-catalog-${index}`}>从目录填入</label>
+                    <Dropdown
+                      id={`model-catalog-${index}`}
+                      searchable
+                      value={catalog.some((item) => item.id === model.id) ? model.id : ""}
+                      placeholder="选择云端模型"
+                      options={catalogOptions}
+                      onChange={(id) => {
+                        const hint = catalog.find((item) => item.id === id);
+                        if (hint) applyHintToIndex(index, hint);
+                      }}
+                    />
+                  </div>
+                )}
                 <div className="form-field">
                   <label htmlFor={`model-name-${index}`}>名称</label>
                   <input
@@ -237,15 +399,17 @@ export function ModelEditor({ models, apiTypes, onChange, pathPrefix }: Props) {
                   />
                 </div>
                 <div className="form-field">
-                  <label htmlFor={`model-baseurl-${index}`}>Base URL</label>
+                  <label htmlFor={scopedId(pathPrefix, "baseurl", index)}>Base URL</label>
                   <input
-                    id={`model-baseurl-${index}`}
+                    id={scopedId(pathPrefix, "baseurl", index)}
+                    name={scopedId(pathPrefix, "baseurl", index)}
                     value={model.baseUrl ?? ""}
                     onChange={(e) =>
                       updateModel(index, { baseUrl: e.target.value || undefined })
                     }
                     placeholder="可选，覆盖 Provider"
-                    autoComplete="off"
+                    autoComplete="url"
+                    inputMode="url"
                   />
                 </div>
                 <div className="form-field">
