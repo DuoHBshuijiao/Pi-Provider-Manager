@@ -1,29 +1,319 @@
-/** Pi 内建 Provider 名称表（与 Pi 文档对齐） */
-export const BUILTIN_PROVIDERS = [
-  "anthropic",
-  "openai",
-  "google",
-  "openrouter",
-  "opencode",
-  "opencode-go",
-  "minimax",
-  "minimax-cn",
-  "xai",
-  "groq",
-  "mistral",
-  "cerebras",
-  "azure-openai-responses",
-  "vercel-ai-gateway",
-  "zai",
-  "huggingface",
-  "kimi-coding",
-  "cloudflare-ai-gateway",
-] as const;
+/** Pi 内建 Provider 名录（对齐 earendil-works/pi `packages/ai/src/providers`） */
+export interface BuiltinModelInfo {
+  id: string;
+  name?: string;
+}
 
-export type BuiltinProvider = (typeof BUILTIN_PROVIDERS)[number];
+export interface BuiltinProviderInfo {
+  id: string;
+  name: string;
+  baseUrl?: string;
+  /** 拉目录用的默认协议；仅在属于本工具已知 API 类型时填写 */
+  api?: string;
+  envKeys?: readonly string[];
+  /** 是否存在可 GET 的公开模型目录。缺省：有 baseUrl 则为 true */
+  listModels?: boolean;
+  models?: readonly BuiltinModelInfo[];
+}
+
+export const BUILTIN_PROVIDER_CATALOG = [
+  { id: "amazon-bedrock", name: "Amazon Bedrock", listModels: false },
+  {
+    id: "ant-ling",
+    name: "Ant Ling",
+    baseUrl: "https://api.ant-ling.com/v1",
+    api: "openai-completions",
+    envKeys: ["ANT_LING_API_KEY"],
+  },
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    baseUrl: "https://api.anthropic.com",
+    api: "anthropic-messages",
+    envKeys: ["ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN"],
+  },
+  { id: "azure-openai-responses", name: "Azure OpenAI", envKeys: ["AZURE_OPENAI_API_KEY"], listModels: false },
+  {
+    id: "baseten",
+    name: "Baseten",
+    baseUrl: "https://inference.baseten.co/v1",
+    api: "openai-completions",
+    envKeys: ["BASETEN_API_KEY"],
+  },
+  {
+    id: "cerebras",
+    name: "Cerebras",
+    baseUrl: "https://api.cerebras.ai/v1",
+    api: "openai-completions",
+    envKeys: ["CEREBRAS_API_KEY"],
+  },
+  { id: "cloudflare-ai-gateway", name: "Cloudflare AI Gateway", envKeys: ["CLOUDFLARE_API_KEY"], listModels: false },
+  { id: "cloudflare-workers-ai", name: "Cloudflare Workers AI", envKeys: ["CLOUDFLARE_API_KEY"], listModels: false },
+  {
+    id: "deepseek",
+    name: "DeepSeek",
+    baseUrl: "https://api.deepseek.com",
+    api: "openai-completions",
+    envKeys: ["DEEPSEEK_API_KEY"],
+  },
+  {
+    id: "fireworks",
+    name: "Fireworks",
+    baseUrl: "https://api.fireworks.ai/inference",
+    api: "openai-completions",
+    envKeys: ["FIREWORKS_API_KEY"],
+  },
+  {
+    id: "github-copilot",
+    name: "GitHub Copilot",
+    baseUrl: "https://api.individual.githubcopilot.com",
+    api: "openai-completions",
+    envKeys: ["COPILOT_GITHUB_TOKEN"],
+  },
+  {
+    id: "google",
+    name: "Google",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    api: "google-generative-ai",
+    envKeys: ["GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_API_KEY"],
+  },
+  { id: "google-vertex", name: "Google Vertex AI", envKeys: ["GOOGLE_CLOUD_API_KEY"], listModels: false },
+  {
+    id: "groq",
+    name: "Groq",
+    baseUrl: "https://api.groq.com/openai/v1",
+    api: "openai-completions",
+    envKeys: ["GROQ_API_KEY"],
+  },
+  {
+    id: "huggingface",
+    name: "Hugging Face",
+    baseUrl: "https://router.huggingface.co/v1",
+    api: "openai-completions",
+    envKeys: ["HF_TOKEN", "HUGGINGFACE_API_KEY"],
+  },
+  {
+    id: "kimi-coding",
+    name: "Kimi For Coding",
+    baseUrl: "https://api.kimi.com/coding",
+    api: "anthropic-messages",
+    envKeys: ["KIMI_API_KEY", "MOONSHOT_API_KEY"],
+  },
+  {
+    id: "minimax",
+    name: "MiniMax",
+    baseUrl: "https://api.minimax.io/anthropic",
+    api: "anthropic-messages",
+    envKeys: ["MINIMAX_API_KEY"],
+  },
+  {
+    id: "minimax-cn",
+    name: "MiniMax CN",
+    baseUrl: "https://api.minimaxi.com/anthropic",
+    api: "anthropic-messages",
+    envKeys: ["MINIMAX_CN_API_KEY", "MINIMAX_API_KEY"],
+  },
+  {
+    id: "mistral",
+    name: "Mistral",
+    baseUrl: "https://api.mistral.ai",
+    envKeys: ["MISTRAL_API_KEY"],
+  },
+  {
+    id: "moonshotai",
+    name: "Moonshot AI",
+    baseUrl: "https://api.moonshot.ai/v1",
+    api: "openai-completions",
+    envKeys: ["MOONSHOT_API_KEY"],
+  },
+  {
+    id: "moonshotai-cn",
+    name: "Moonshot AI CN",
+    baseUrl: "https://api.moonshot.cn/v1",
+    api: "openai-completions",
+    envKeys: ["MOONSHOT_API_KEY"],
+  },
+  {
+    id: "nvidia",
+    name: "NVIDIA",
+    baseUrl: "https://integrate.api.nvidia.com/v1",
+    api: "openai-completions",
+    envKeys: ["NVIDIA_API_KEY"],
+  },
+  {
+    id: "openai",
+    name: "OpenAI",
+    baseUrl: "https://api.openai.com/v1",
+    api: "openai-responses",
+    envKeys: ["OPENAI_API_KEY"],
+  },
+  {
+    id: "openai-codex",
+    name: "OpenAI Codex",
+    baseUrl: "https://chatgpt.com/backend-api",
+    envKeys: ["OPENAI_API_KEY"],
+    listModels: false,
+  },
+  { id: "opencode", name: "OpenCode Zen", envKeys: ["OPENCODE_API_KEY"], listModels: false },
+  { id: "opencode-go", name: "OpenCode Go", envKeys: ["OPENCODE_API_KEY"], listModels: false },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    api: "openai-completions",
+    envKeys: ["OPENROUTER_API_KEY"],
+  },
+  {
+    id: "qwen-token-plan",
+    name: "Qwen Token Plan",
+    baseUrl: "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+    api: "openai-completions",
+    envKeys: ["QWEN_TOKEN_PLAN_API_KEY"],
+  },
+  {
+    id: "qwen-token-plan-cn",
+    name: "Qwen Token Plan CN",
+    baseUrl: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+    api: "openai-completions",
+    envKeys: ["QWEN_TOKEN_PLAN_CN_API_KEY"],
+  },
+  {
+    id: "qwen-token-plan-individual",
+    name: "Qwen Token Plan Individual",
+    baseUrl: "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+    api: "openai-completions",
+    envKeys: ["QWEN_TOKEN_PLAN_API_KEY"],
+  },
+  {
+    id: "together",
+    name: "Together",
+    baseUrl: "https://api.together.ai/v1",
+    api: "openai-completions",
+    envKeys: ["TOGETHER_API_KEY"],
+  },
+  {
+    id: "vercel-ai-gateway",
+    name: "Vercel AI Gateway",
+    baseUrl: "https://ai-gateway.vercel.sh",
+    api: "anthropic-messages",
+    envKeys: ["AI_GATEWAY_API_KEY"],
+  },
+  {
+    id: "xai",
+    name: "xAI",
+    baseUrl: "https://api.x.ai/v1",
+    api: "openai-responses",
+    envKeys: ["XAI_API_KEY"],
+  },
+  {
+    id: "xiaomi",
+    name: "Xiaomi",
+    baseUrl: "https://api.xiaomimimo.com/v1",
+    api: "openai-completions",
+    envKeys: ["XIAOMI_API_KEY"],
+  },
+  {
+    id: "xiaomi-token-plan-ams",
+    name: "Xiaomi Token Plan AMS",
+    baseUrl: "https://token-plan-ams.xiaomimimo.com/v1",
+    api: "openai-completions",
+    envKeys: ["XIAOMI_TOKEN_PLAN_AMS_API_KEY"],
+  },
+  {
+    id: "xiaomi-token-plan-cn",
+    name: "Xiaomi Token Plan CN",
+    baseUrl: "https://token-plan-cn.xiaomimimo.com/v1",
+    api: "openai-completions",
+    envKeys: ["XIAOMI_TOKEN_PLAN_CN_API_KEY"],
+  },
+  {
+    id: "xiaomi-token-plan-sgp",
+    name: "Xiaomi Token Plan SGP",
+    baseUrl: "https://token-plan-sgp.xiaomimimo.com/v1",
+    api: "openai-completions",
+    envKeys: ["XIAOMI_TOKEN_PLAN_SGP_API_KEY"],
+  },
+  {
+    id: "zai",
+    name: "Z.AI",
+    baseUrl: "https://api.z.ai/api/coding/paas/v4",
+    api: "openai-completions",
+    envKeys: ["ZAI_API_KEY", "Z_AI_API_KEY"],
+  },
+  {
+    id: "zai-coding-cn",
+    name: "Z.AI Coding CN",
+    baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4",
+    api: "openai-completions",
+    envKeys: ["ZAI_CODING_CN_API_KEY", "ZAI_API_KEY"],
+  },
+] as const satisfies readonly BuiltinProviderInfo[];
+
+export const BUILTIN_PROVIDERS = BUILTIN_PROVIDER_CATALOG.map((provider) => provider.id);
+
+export type BuiltinProvider = (typeof BUILTIN_PROVIDER_CATALOG)[number]["id"];
+
+const BUILTIN_PROVIDER_BY_ID = new Map<string, BuiltinProviderInfo>(
+  BUILTIN_PROVIDER_CATALOG.map((provider) => [provider.id, provider]),
+);
+
+let catalogOverride: readonly BuiltinProviderInfo[] | null = null;
+let overrideById: Map<string, BuiltinProviderInfo> | null = null;
+
+export function setBuiltinCatalog(catalog: readonly BuiltinProviderInfo[] | null): void {
+  catalogOverride = catalog;
+  overrideById = catalog
+    ? new Map(catalog.map((provider) => [provider.id, provider]))
+    : null;
+}
+
+export function getBuiltinCatalog(): readonly BuiltinProviderInfo[] {
+  return catalogOverride ?? BUILTIN_PROVIDER_CATALOG;
+}
+
+export function cloneSeedCatalog(): BuiltinProviderInfo[] {
+  return BUILTIN_PROVIDER_CATALOG.map((entry) => {
+    const provider = entry as BuiltinProviderInfo;
+    return {
+      id: provider.id,
+      name: provider.name,
+      ...(provider.baseUrl ? { baseUrl: provider.baseUrl } : {}),
+      ...(provider.api ? { api: provider.api } : {}),
+      ...(provider.envKeys ? { envKeys: [...provider.envKeys] } : {}),
+      ...(provider.listModels === undefined ? {} : { listModels: provider.listModels }),
+      models: [],
+    };
+  });
+}
+
+function catalogMap(): Map<string, BuiltinProviderInfo> {
+  return overrideById ?? BUILTIN_PROVIDER_BY_ID;
+}
+
+export function getBuiltinProvider(name: string): BuiltinProviderInfo | undefined {
+  return catalogMap().get(name);
+}
 
 export function isBuiltinProvider(name: string): boolean {
-  return (BUILTIN_PROVIDERS as readonly string[]).includes(name);
+  return catalogMap().has(name);
+}
+
+export function findCatalogProvider(
+  catalog: readonly BuiltinProviderInfo[] | undefined,
+  id: string,
+): BuiltinProviderInfo | undefined {
+  return catalog?.find((provider) => provider.id === id);
+}
+
+export function builtinProviderLabel(id: string, catalog?: readonly BuiltinProviderInfo[]): string {
+  const meta = catalog ? findCatalogProvider(catalog, id) : getBuiltinProvider(id);
+  if (!meta || meta.name === id) return id;
+  return `${meta.name} (${id})`;
+}
+
+export function builtinModelLabel(model: BuiltinModelInfo): string {
+  if (model.name && model.name !== model.id) return `${model.name} (${model.id})`;
+  return model.id;
 }
 
 export const API_TYPES = [
