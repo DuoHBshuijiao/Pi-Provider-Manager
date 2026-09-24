@@ -19,6 +19,8 @@ npm run dev
 - 前端：http://localhost:5173
 - API：http://localhost:8787
 
+默认 API 端口是 8787。若启动时出现 `EACCES` 或端口被占用，在同一个终端里设置 `PORT` 后再执行 `npm run dev`（例如 PowerShell：`$env:PORT=8788; npm run dev`）。Vite 代理和 API 都会读取这个环境变量，必须在同一次启动里设置，两边才会指向同一端口。
+
 ## 生产构建
 
 ```bash

@@ -43,7 +43,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
       ...init,
     });
   } catch {
-    throw new Error("无法连接本地 API。请确认已运行 npm run dev，且服务端在 8787 端口监听。");
+    throw new Error("无法连接本地 API。请确认已运行 npm run dev，且 API 进程已成功监听。");
   }
 
   const text = await res.text();

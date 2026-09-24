@@ -1,4 +1,4 @@
-import { serve } from "@hono/node-server";
+import { createAdaptorServer } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import path from "node:path";
@@ -20,16 +20,22 @@ if (isProd) {
   app.get("*", serveStatic({ path: path.join(clientDir, "index.html") }));
 }
 
-serve(
-  {
-    fetch: app.fetch,
-    port,
-    hostname: "127.0.0.1",
-  },
-  (info) => {
-    console.log(`Pi Provider Manager API running on http://127.0.0.1:${info.port}`);
-    void getEffectiveCatalog().catch((error) => {
-      console.warn("[pi-catalog] startup sync failed:", error);
-    });
-  },
-);
+const hostname = "127.0.0.1";
+const server = createAdaptorServer({ fetch: app.fetch });
+
+server.on("error", (error: NodeJS.ErrnoException) => {
+  if (error.code === "EACCES" || error.code === "EADDRINUSE") {
+    console.error(
+      `无法在 ${hostname}:${port} 监听（${error.code}）。该端口当前不可用。请关闭占用该端口的进程，或换一个端口后重新启动，例如：PORT=8788 npm run dev`,
+    );
+    process.exit(1);
+  }
+  throw error;
+});
+
+server.listen(port, hostname, () => {
+  console.log(`Pi Provider Manager API running on http://${hostname}:${port}`);
+  void getEffectiveCatalog().catch((error) => {
+    console.warn("[pi-catalog] startup sync failed:", error);
+  });
+});

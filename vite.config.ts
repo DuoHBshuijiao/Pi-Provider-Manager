@@ -14,7 +14,7 @@ export default defineConfig({
     proxy: {
       "/api": {
         // 必须用 127.0.0.1：API 只绑 IPv4；Windows 上 localhost 常解析到 ::1 导致 ECONNREFUSED
-        target: "http://127.0.0.1:8787",
+        target: `http://127.0.0.1:${process.env.PORT ?? 8787}`,
         changeOrigin: true,
       },
     },
