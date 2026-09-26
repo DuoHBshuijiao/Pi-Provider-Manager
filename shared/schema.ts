@@ -10,6 +10,13 @@ const costSchema = z
   })
   .passthrough();
 
+const promptCacheSchema = z
+  .object({
+    short: z.number().positive().optional(),
+    long: z.number().positive().optional(),
+  })
+  .optional();
+
 const thinkingLevelMapSchema = z.record(
   z.string(),
   z.union([z.string(), z.null()]),
@@ -32,6 +39,7 @@ export const modelDefinitionSchema = z
     headers: z.record(z.string(), z.string()).optional(),
     transport: z.enum(TRANSPORT_TYPES).optional(),
     compat: compatSchema,
+    promptCache: promptCacheSchema,
   })
   .passthrough();
 
@@ -47,6 +55,7 @@ export const modelOverrideSchema = z
     headers: z.record(z.string(), z.string()).optional(),
     transport: z.enum(TRANSPORT_TYPES).optional(),
     compat: compatSchema,
+    promptCache: promptCacheSchema,
   })
   .passthrough();
 
