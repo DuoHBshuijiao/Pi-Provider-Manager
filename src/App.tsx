@@ -8,13 +8,27 @@ import {
 } from "react";
 import type { ModelsConfig, ProviderConfig } from "@shared/schema";
 import { createEmptyConfig, newlyFilledBuiltinBaseUrls } from "@shared/schema";
-import { fetchConfig, fetchMeta, saveConfig, validateConfig, type MetaResponse } from "./api";
+import { findCatalogProvider } from "@shared/builtins";
+import { applyPatches, buildThirdPartyLongCachePatches } from "@shared/long-cache";
+import {
+  disableLongCache,
+  enableLongCache,
+  fetchConfig,
+  fetchLongCacheStatus,
+  fetchMeta,
+  markLongCacheModelsPersisted,
+  saveConfig,
+  validateConfig,
+  type LongCacheStatus,
+  type MetaResponse,
+} from "./api";
 import { focusConfigPath, providerNameFromPath } from "./focus-path";
 import { ProviderList } from "./components/ProviderList";
 import { ProviderEditor } from "./components/ProviderEditor";
 import { JsonView } from "./components/JsonView";
 import { NewProviderModal } from "./components/NewProviderModal";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { LongCacheControl } from "./components/LongCacheControl";
 
 type Workspace = "providers" | "json";
 
@@ -53,6 +67,9 @@ export default function App() {
   const [validationIssues, setValidationIssues] = useState<
     Array<{ path: string; message: string }>
   >([]);
+  const [cacheStatus, setCacheStatus] = useState<LongCacheStatus | null>(null);
+  const [cacheBusy, setCacheBusy] = useState(false);
+  const [cacheError, setCacheError] = useState<string | null>(null);
 
   const isDirty = JSON.stringify(config) !== JSON.stringify(savedConfig);
   const providerNames = Object.keys(config.providers);
@@ -65,13 +82,23 @@ export default function App() {
     setLoadFailed(false);
     setValidationIssues([]);
     try {
-      const [metaResult, configResult] = await Promise.allSettled([
+      const [metaResult, configResult, cacheResult] = await Promise.allSettled([
         fetchMeta(),
         fetchConfig(),
+        fetchLongCacheStatus(),
       ]);
 
       if (metaResult.status === "fulfilled") {
         setMeta(metaResult.value);
+      }
+
+      if (cacheResult.status === "fulfilled") {
+        setCacheStatus(cacheResult.value);
+        setCacheError(null);
+      } else {
+        setCacheStatus(null);
+        const reason = cacheResult.reason;
+        setCacheError(reason instanceof Error ? reason.message : "无法读取长缓存状态");
       }
 
       if (configResult.status === "fulfilled") {
@@ -150,12 +177,68 @@ export default function App() {
       setSuccess("配置已保存");
       setSuccessBackup(result.backupPath);
       setShowBackupPath(false);
+      if (cacheStatus?.owned) {
+        try {
+          const marked = await markLongCacheModelsPersisted();
+          setCacheStatus(marked.status);
+        } catch {
+          // 环境变量已生效；models 快照标记失败不阻断保存
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存失败");
     } finally {
       setSaving(false);
     }
-  }, [saving, config]);
+  }, [saving, config, cacheStatus?.owned]);
+
+  const handleEnableLongCache = async (patchModels: boolean) => {
+    setCacheBusy(true);
+    setCacheError(null);
+    try {
+      const thirdParty =
+        Boolean(selectedProvider) &&
+        !findCatalogProvider(meta?.builtinCatalog, selectedProvider ?? "");
+      const patches =
+        patchModels && thirdParty && selectedProvider
+          ? buildThirdPartyLongCachePatches(config, selectedProvider)
+          : [];
+      const result = await enableLongCache(patches);
+      setCacheStatus(result.status);
+      if (patches.length > 0) {
+        setConfig((prev) => applyPatches(prev, patches, "forward"));
+      }
+      setSuccess("已写入用户环境变量 PI_CACHE_RETENTION=long。新开能继承该变量的 Pi 才会发长缓存。");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "启用长缓存失败";
+      setCacheError(message);
+      throw err;
+    } finally {
+      setCacheBusy(false);
+    }
+  };
+
+  const handleDisableLongCache = async () => {
+    setCacheBusy(true);
+    setCacheError(null);
+    try {
+      const result = await disableLongCache();
+      setCacheStatus(result.status);
+      if (result.modelsPatches.length > 0) {
+        setConfig((prev) => applyPatches(prev, result.modelsPatches, "reverse"));
+        if (result.diskPatched) {
+          setSavedConfig((prev) => applyPatches(prev, result.modelsPatches, "reverse"));
+        }
+      }
+      setSuccess("已按快照还原长缓存设置");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "关闭长缓存失败";
+      setCacheError(message);
+      throw err;
+    } finally {
+      setCacheBusy(false);
+    }
+  };
 
   const handleSave = useCallback(() => {
     if (saving || !isDirty || confirmRef.current) return;
@@ -355,7 +438,25 @@ export default function App() {
             </p>
           )}
         </div>
-        <div className="toolbar">
+        <div className="header-actions">
+          <LongCacheControl
+            status={cacheStatus}
+            busy={cacheBusy}
+            error={cacheError}
+            canPatchCurrent={Boolean(
+              selectedProvider &&
+                currentProvider &&
+                !findCatalogProvider(meta?.builtinCatalog, selectedProvider),
+            )}
+            currentProviderName={
+              selectedProvider && !findCatalogProvider(meta?.builtinCatalog, selectedProvider)
+                ? selectedProvider
+                : null
+            }
+            onEnable={handleEnableLongCache}
+            onDisable={handleDisableLongCache}
+          />
+          <div className="toolbar">
           {isDirty && (
             <span className="badge badge-dirty" title="更改尚未写入磁盘">
               未保存
@@ -374,6 +475,7 @@ export default function App() {
           >
             {saving ? "保存中…" : "保存配置"}
           </button>
+        </div>
         </div>
       </header>
 

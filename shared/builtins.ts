@@ -374,7 +374,7 @@ export const COMPAT_LABELS: Record<string, string> = {
   requiresThinkingAsText: "思考块转纯文本",
   requiresReasoningContentOnAssistantMessages: "assistant 消息需 reasoning_content",
   supportsStrictMode: "工具定义支持 strict",
-  supportsLongCacheRetention: "长缓存保留",
+  supportsLongCacheRetention: "允许发送长缓存字段",
   supportsEagerToolInputStreaming: "eager_input_streaming",
   sendSessionAffinityHeaders: "发送 x-session-affinity",
   supportsCacheControlOnTools: "工具定义 cache_control",
@@ -403,13 +403,13 @@ export const COMPAT_HELP: Record<string, string> = {
   supportsStrictMode:
     "工具定义是否支持 strict。代理拒绝该字段时设为「不支持」。",
   supportsLongCacheRetention:
-    "当 Pi 进程设置 PI_CACHE_RETENTION=long 时，是否允许发送长缓存请求。OpenAI 兼容端对应 prompt_cache_retention: \"24h\"；Anthropic 对应 1 小时 cache-control。只表示接口能力，不等于自动启用缓存。",
+    "仅表示接口是否接受长缓存字段，不是总开关。TUI/RPC 要发 1 小时缓存必须由顶栏「启用长缓存」写入 PI_CACHE_RETENTION=long。Anthropic 对应 cache_control.ttl: \"1h\"；OpenAI 对应 prompt_cache_retention: \"24h\"。设为「支持」不会自己打开长缓存；代理拒绝该字段时设为「不支持」。",
   supportsEagerToolInputStreaming:
     "Anthropic 工具入参流式传输。若代理拒绝该字段，设为「不支持」。",
   sendSessionAffinityHeaders:
-    "给中转站提供稳定会话标识，以提高同一后端路由与缓存命中。代理不支持或出现异常时关闭。",
+    "给中转站提供稳定会话标识，以提高同一后端路由与缓存命中。会写入请求头，但不是长缓存开关。代理不支持或出现异常时关闭。",
   supportsCacheControlOnTools:
-    "Anthropic 风格的工具缓存标记。仅 Anthropic API 或明确兼容 Anthropic cache-control 的代理开启；普通 OpenAI 接口不要开。",
+    "是否在最后一个 tool 上挂 Anthropic 风格 cache_control。短缓存（约 5 分钟）也会打这个断点，并不等于打开 1 小时长缓存。仅 Anthropic API 或明确兼容 cache-control 的代理开启；普通 OpenAI 接口不要开。",
   forceAdaptiveThinking:
     "强制使用 adaptive thinking。仅在文档或排障明确要求时覆盖。",
   allowEmptySignature:

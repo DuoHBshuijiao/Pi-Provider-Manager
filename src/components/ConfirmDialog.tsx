@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef } from "react";
+import { createPortal } from "react-dom";
 
 interface Props {
   title: string;
@@ -6,6 +7,7 @@ interface Props {
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -20,6 +22,7 @@ export function ConfirmDialog({
   confirmLabel = "确定",
   cancelLabel = "取消",
   danger = false,
+  busy = false,
   onConfirm,
   onCancel,
 }: Props) {
@@ -45,7 +48,7 @@ export function ConfirmDialog({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onCancel();
+        if (!busy) onCancel();
         return;
       }
       if (event.key !== "Tab" || !dialogRef.current) return;
@@ -69,10 +72,10 @@ export function ConfirmDialog({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCancel]);
+  }, [busy, onCancel]);
 
-  return (
-    <div className="modal-overlay" onClick={onCancel} role="presentation">
+  return createPortal(
+    <div className="modal-overlay" onClick={() => !busy && onCancel()} role="presentation">
       <div
         ref={dialogRef}
         className="modal modal-sm"
@@ -91,7 +94,7 @@ export function ConfirmDialog({
           </p>
         </div>
         <div className="modal-footer">
-          <button type="button" className="btn" onClick={onCancel}>
+          <button type="button" className="btn" onClick={onCancel} disabled={busy}>
             {cancelLabel}
           </button>
           <button
@@ -99,11 +102,14 @@ export function ConfirmDialog({
             type="button"
             className={`btn ${danger ? "btn-danger btn-danger-solid" : "btn-primary"}`}
             onClick={onConfirm}
+            disabled={busy}
+            aria-busy={busy}
           >
-            {confirmLabel}
+            {busy ? "处理中…" : confirmLabel}
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

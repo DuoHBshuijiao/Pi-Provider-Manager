@@ -84,7 +84,7 @@ export function CompatEditor({ compat, onChange, apiType, pathPrefix }: Props) {
   return (
     <div>
       <p className="text-sm text-muted mb-sm compat-hint">
-        默认 = 不写该字段，交由 Pi 按协议决定。仅在接口报错、代理文档明确要求或排障时覆盖默认值。
+        默认 = 不写该字段，交由 Pi 按协议决定。仅在接口报错、代理文档明确要求或排障时覆盖默认值。「允许发送长缓存字段」不是总开关；TUI/RPC 要发 1 小时缓存请用顶栏「启用长缓存」。
       </p>
 
       {groups.primary.length > 0 ? (

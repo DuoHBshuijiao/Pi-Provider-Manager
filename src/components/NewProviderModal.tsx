@@ -208,6 +208,10 @@ export function NewProviderModal({
                   options={apiTypes.map((t) => ({ value: t, label: t }))}
                   onChange={setApi}
                 />
+                <p className="text-sm text-muted mt-xs">
+                  Anthropic 兼容代理请选 anthropic-messages，才会发 cache_control.ttl。openai-completions
+                  在长缓存开启时发的是 prompt_cache_retention: 24h。
+                </p>
               </div>
             </>
           ) : (
