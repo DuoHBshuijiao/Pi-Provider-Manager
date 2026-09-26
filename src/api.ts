@@ -108,10 +108,11 @@ export function revealLocalFile(target: "auth" | "models"): Promise<{ ok: boolea
 }
 
 export interface LongCacheStatus {
-  supported: boolean;
+  envSupported: boolean;
   processValue: string | null;
   userValue: string | null;
   owned: boolean;
+  method: "hook" | "env" | null;
   previousUserValue: string | null;
   modelsPersisted: boolean;
   checked: boolean;
@@ -130,17 +131,26 @@ export interface FieldPatch {
   after: unknown;
 }
 
+export interface EnvProbeResult {
+  token: string;
+  checkCommand: string;
+  clearCommand: string;
+}
+
 export function fetchLongCacheStatus(): Promise<LongCacheStatus> {
   return request<LongCacheStatus>("/api/cache-retention");
 }
 
-export function enableLongCache(modelsPatches: FieldPatch[]): Promise<{
+export function enableLongCache(
+  modelsPatches: FieldPatch[],
+  method: "hook" | "env",
+): Promise<{
   ok: true;
   status: LongCacheStatus;
 }> {
   return request("/api/cache-retention", {
     method: "PUT",
-    body: JSON.stringify({ action: "enable", modelsPatches }),
+    body: JSON.stringify({ action: "enable", method, modelsPatches }),
   });
 }
 
@@ -163,5 +173,19 @@ export function markLongCacheModelsPersisted(): Promise<{
   return request("/api/cache-retention", {
     method: "PUT",
     body: JSON.stringify({ action: "mark-persisted" }),
+  });
+}
+
+export function writeEnvProbe(): Promise<{ ok: true } & EnvProbeResult> {
+  return request("/api/cache-retention", {
+    method: "PUT",
+    body: JSON.stringify({ action: "probe" }),
+  });
+}
+
+export function clearEnvProbe(): Promise<{ ok: true }> {
+  return request("/api/cache-retention", {
+    method: "PUT",
+    body: JSON.stringify({ action: "clear-probe" }),
   });
 }

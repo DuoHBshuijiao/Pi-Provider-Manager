@@ -2,13 +2,20 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import {
+  ENV_PROBE_CLEAR_COMMAND,
+  envProbeCheckCommand,
+  LONG_CACHE_SIDECAR_NAME,
   PI_CACHE_RETENTION,
   PI_CACHE_RETENTION_LONG,
+  PI_PPM_ENV_PROBE,
   SESSION_COMMANDS,
   applyPatches,
+  parseLongCacheMethod,
   type FieldPatch,
+  type LongCacheMethod,
 } from "../shared/long-cache.js";
 import { readConfig, resolveAgentDir, writeConfig } from "./config-store.js";
+import { installLongCacheExtension } from "./long-cache-extension.js";
 import {
   canWriteUserEnv,
   getUserEnvironmentVariable,
@@ -17,6 +24,7 @@ import {
 
 export interface LongCacheSidecar {
   owned: boolean;
+  method: LongCacheMethod;
   previousUserValue: string | null;
   appliedAt: string;
   modelsPersisted: boolean;
@@ -24,10 +32,11 @@ export interface LongCacheSidecar {
 }
 
 export interface LongCacheStatus {
-  supported: boolean;
+  envSupported: boolean;
   processValue: string | null;
   userValue: string | null;
   owned: boolean;
+  method: LongCacheMethod | null;
   previousUserValue: string | null;
   modelsPersisted: boolean;
   checked: boolean;
@@ -35,8 +44,14 @@ export interface LongCacheStatus {
   sessionCommands: typeof SESSION_COMMANDS;
 }
 
+export interface EnvProbeResult {
+  token: string;
+  checkCommand: string;
+  clearCommand: string;
+}
+
 function sidecarPath(): string {
-  return path.join(resolveAgentDir(), "provider-manager-long-cache.json");
+  return path.join(resolveAgentDir(), LONG_CACHE_SIDECAR_NAME);
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -81,6 +96,7 @@ function parseSidecar(raw: unknown): LongCacheSidecar | null {
   if (!rec || rec.owned !== true) return null;
   return {
     owned: true,
+    method: parseLongCacheMethod(rec.method),
     previousUserValue: typeof rec.previousUserValue === "string" ? rec.previousUserValue : null,
     appliedAt: typeof rec.appliedAt === "string" ? rec.appliedAt : "",
     modelsPersisted: rec.modelsPersisted === true,
@@ -118,46 +134,76 @@ export async function getLongCacheStatus(): Promise<LongCacheStatus> {
   const userValue = canWriteUserEnv() ? await getUserEnvironmentVariable(PI_CACHE_RETENTION) : null;
   const processValue = process.env[PI_CACHE_RETENTION] || null;
   const owned = sidecar?.owned === true;
+  const method = owned ? sidecar.method : null;
+  const envOwned = owned && method === "env";
   return {
-    supported: canWriteUserEnv(),
+    envSupported: canWriteUserEnv(),
     processValue,
     userValue,
     owned,
+    method,
     previousUserValue: sidecar?.previousUserValue ?? null,
     modelsPersisted: sidecar?.modelsPersisted === true,
-    checked: owned && userValue === PI_CACHE_RETENTION_LONG,
-    externalLong: !owned && userValue === PI_CACHE_RETENTION_LONG,
+    checked: method === "hook" ? owned : envOwned && userValue === PI_CACHE_RETENTION_LONG,
+    externalLong: userValue === PI_CACHE_RETENTION_LONG && !envOwned,
     sessionCommands: SESSION_COMMANDS,
   };
 }
 
-export async function enableLongCache(modelsPatches: FieldPatch[]): Promise<LongCacheStatus> {
-  if (!canWriteUserEnv()) {
-    throw new Error(
-      "当前系统无法由本工具写入用户环境变量。请在启动 Pi 的终端执行：export PI_CACHE_RETENTION=long",
-    );
+function mergeSidecar(
+  existing: LongCacheSidecar | null,
+  method: LongCacheMethod,
+  previousUserValue: string | null,
+  modelsPatches: FieldPatch[],
+): LongCacheSidecar {
+  if (existing?.owned) {
+    return {
+      ...existing,
+      method,
+      modelsPatches: existing.modelsPatches.length > 0 ? existing.modelsPatches : modelsPatches,
+    };
   }
-  const currentUser = await getUserEnvironmentVariable(PI_CACHE_RETENTION);
+  return {
+    owned: true,
+    method,
+    previousUserValue,
+    appliedAt: new Date().toISOString(),
+    modelsPersisted: false,
+    modelsPatches,
+  };
+}
+
+export async function enableLongCache(
+  modelsPatches: FieldPatch[],
+  method: LongCacheMethod,
+): Promise<LongCacheStatus> {
+  await clearEnvProbe();
   const existing = await readSidecar();
-  const sidecar: LongCacheSidecar = existing?.owned
-    ? {
-        ...existing,
-        modelsPatches: existing.modelsPatches.length > 0 ? existing.modelsPatches : modelsPatches,
-      }
-    : {
-        owned: true,
-        previousUserValue: currentUser,
-        appliedAt: new Date().toISOString(),
-        modelsPersisted: false,
-        modelsPatches,
-      };
-  await writeSidecar(sidecar);
-  try {
-    await setUserEnvironmentVariable(PI_CACHE_RETENTION, PI_CACHE_RETENTION_LONG);
-  } catch (error) {
-    if (!existing?.owned) await deleteSidecar();
-    throw error;
+  if (existing?.owned && existing.method !== method) {
+    throw new Error("已用另一种方式启用长缓存，请先关闭再切换");
   }
+
+  if (method === "env") {
+    if (!canWriteUserEnv()) {
+      throw new Error(
+        "当前系统无法由本工具写入用户环境变量。请改用 Pi 扩展（Hook），或在启动 Pi 的终端执行：export PI_CACHE_RETENTION=long",
+      );
+    }
+    const currentUser = await getUserEnvironmentVariable(PI_CACHE_RETENTION);
+    const sidecar = mergeSidecar(existing, "env", currentUser, modelsPatches);
+    await writeSidecar(sidecar);
+    try {
+      await setUserEnvironmentVariable(PI_CACHE_RETENTION, PI_CACHE_RETENTION_LONG);
+    } catch (error) {
+      if (!existing?.owned) await deleteSidecar();
+      throw error;
+    }
+    return getLongCacheStatus();
+  }
+
+  await installLongCacheExtension();
+  const sidecar = mergeSidecar(existing, "hook", null, modelsPatches);
+  await writeSidecar(sidecar);
   return getLongCacheStatus();
 }
 
@@ -168,7 +214,7 @@ export async function disableLongCache(): Promise<{
 }> {
   const sidecar = await readSidecar();
   if (!sidecar?.owned) {
-    throw new Error("本工具未接管长缓存，拒绝修改环境变量，以免删除你自己设置的值");
+    throw new Error("本工具未接管长缓存，拒绝修改，以免删除你自己设置的值");
   }
 
   let diskPatched = false;
@@ -181,8 +227,11 @@ export async function disableLongCache(): Promise<{
     }
   }
 
-  await setUserEnvironmentVariable(PI_CACHE_RETENTION, sidecar.previousUserValue);
+  if (sidecar.method === "env") {
+    await setUserEnvironmentVariable(PI_CACHE_RETENTION, sidecar.previousUserValue);
+  }
   await deleteSidecar();
+  await clearEnvProbe();
   return {
     status: await getLongCacheStatus(),
     modelsPatches: sidecar.modelsPatches,
@@ -197,4 +246,26 @@ export async function markLongCacheModelsPersisted(): Promise<LongCacheStatus> {
     await writeSidecar({ ...sidecar, modelsPersisted: true });
   }
   return getLongCacheStatus();
+}
+
+export async function writeEnvProbe(): Promise<EnvProbeResult> {
+  if (!canWriteUserEnv()) {
+    throw new Error("当前系统无法写入用户环境变量，探测仅适用于 Windows");
+  }
+  const token = randomBytes(8).toString("hex");
+  await setUserEnvironmentVariable(PI_PPM_ENV_PROBE, token);
+  return {
+    token,
+    checkCommand: envProbeCheckCommand(token),
+    clearCommand: ENV_PROBE_CLEAR_COMMAND,
+  };
+}
+
+export async function clearEnvProbe(): Promise<void> {
+  if (!canWriteUserEnv()) return;
+  try {
+    await setUserEnvironmentVariable(PI_PPM_ENV_PROBE, null);
+  } catch {
+    // 探测变量可能本来就不存在
+  }
 }

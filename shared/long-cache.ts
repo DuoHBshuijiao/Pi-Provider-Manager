@@ -3,7 +3,18 @@ import type { ModelsConfig, ProviderConfig } from "./schema.js";
 
 export const PI_CACHE_RETENTION = "PI_CACHE_RETENTION";
 export const PI_CACHE_RETENTION_LONG = "long";
+export const PI_PPM_ENV_PROBE = "PI_PPM_ENV_PROBE";
+export const LONG_CACHE_SIDECAR_NAME = "provider-manager-long-cache.json";
+export const LONG_CACHE_EXTENSION_NAME = "provider-manager-long-cache.js";
+export const LONG_CACHE_EXTENSION_MARKER = "@pi-provider-manager/long-cache";
 export const DEFAULT_PROMPT_CACHE = { short: 300, long: 3600 } as const;
+
+export const LONG_CACHE_METHODS = ["hook", "env"] as const;
+export type LongCacheMethod = (typeof LONG_CACHE_METHODS)[number];
+
+export function parseLongCacheMethod(value: unknown): LongCacheMethod {
+  return value === "hook" ? "hook" : "env";
+}
 
 export interface FieldPatch {
   path: PathSeg[];
@@ -80,3 +91,16 @@ export const SESSION_COMMANDS = {
   bash: "PI_CACHE_RETENTION=long pi",
   bashRpc: "PI_CACHE_RETENTION=long pi --mode rpc",
 } as const;
+
+export const ENV_PROBE_CLEAR_COMMAND =
+  "[Environment]::SetEnvironmentVariable('PI_PPM_ENV_PROBE',$null,'User')";
+
+export function envProbeCheckCommand(token: string): string {
+  return (
+    `$t='${token}'; $p=$env:PI_PPM_ENV_PROBE; $u=[Environment]::GetEnvironmentVariable('PI_PPM_ENV_PROBE','User'); ` +
+    "if ($p -eq $t -and $u -eq $t) { '本进程和用户变量都是本次探测值：重开终端即可继承' } " +
+    "elseif ($u -eq $t) { '用户变量已写入，本进程没有：还需重启资源管理器或注销' } " +
+    "elseif ($p -eq $t) { '本进程有值，但用户变量不是本次探测值' } " +
+    "else { '本进程和用户变量都不是本次探测值。请完全退出终端宿主后新开窗口再运行；不要在已打开的 Windows Terminal 里新建标签' }"
+  );
+}

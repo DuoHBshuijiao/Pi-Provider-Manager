@@ -17,12 +17,14 @@ import {
 import { getEffectiveCatalog } from "./pi-catalog.js";
 import { fetchRemoteModels } from "./remote-models.js";
 import {
+  clearEnvProbe,
   disableLongCache,
   enableLongCache,
   getLongCacheStatus,
   markLongCacheModelsPersisted,
+  writeEnvProbe,
 } from "./long-cache-store.js";
-import type { FieldPatch } from "../shared/long-cache.js";
+import type { FieldPatch, LongCacheMethod } from "../shared/long-cache.js";
 
 export const api = new Hono();
 
@@ -142,14 +144,21 @@ api.get("/cache-retention", async (c) => {
   }
 });
 
+function parseMethod(raw: unknown): LongCacheMethod | null {
+  return raw === "hook" || raw === "env" ? raw : null;
+}
+
 api.put("/cache-retention", async (c) => {
   try {
     const body = (await c.req.json()) as {
       action?: string;
+      method?: unknown;
       modelsPatches?: unknown;
     };
     if (body.action === "enable") {
-      const status = await enableLongCache(parseFieldPatches(body.modelsPatches));
+      const method = parseMethod(body.method);
+      if (!method) return c.json({ error: "缺少 method，须为 hook 或 env" }, 400);
+      const status = await enableLongCache(parseFieldPatches(body.modelsPatches), method);
       return c.json({ ok: true, status });
     }
     if (body.action === "disable") {
@@ -159,6 +168,14 @@ api.put("/cache-retention", async (c) => {
     if (body.action === "mark-persisted") {
       const status = await markLongCacheModelsPersisted();
       return c.json({ ok: true, status });
+    }
+    if (body.action === "probe") {
+      const probe = await writeEnvProbe();
+      return c.json({ ok: true, ...probe });
+    }
+    if (body.action === "clear-probe") {
+      await clearEnvProbe();
+      return c.json({ ok: true });
     }
     return c.json({ error: "未知 action" }, 400);
   } catch (error) {

@@ -403,7 +403,7 @@ export const COMPAT_HELP: Record<string, string> = {
   supportsStrictMode:
     "工具定义是否支持 strict。代理拒绝该字段时设为「不支持」。",
   supportsLongCacheRetention:
-    "仅表示接口是否接受长缓存字段，不是总开关。TUI/RPC 要发 1 小时缓存必须由顶栏「启用长缓存」写入 PI_CACHE_RETENTION=long。Anthropic 对应 cache_control.ttl: \"1h\"；OpenAI 对应 prompt_cache_retention: \"24h\"。设为「支持」不会自己打开长缓存；代理拒绝该字段时设为「不支持」。",
+    "仅表示接口是否接受长缓存字段，不是总开关。TUI/RPC 要发长缓存必须由顶栏「启用长缓存」选择 Pi 扩展或写入 PI_CACHE_RETENTION=long。Anthropic 对应 cache_control.ttl: \"1h\"；OpenAI 对应 prompt_cache_retention: \"24h\"。设为「支持」不会自己打开长缓存；代理拒绝该字段时设为「不支持」。",
   supportsEagerToolInputStreaming:
     "Anthropic 工具入参流式传输。若代理拒绝该字段，设为「不支持」。",
   sendSessionAffinityHeaders:

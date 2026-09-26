@@ -1,14 +1,16 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 interface Props {
   title: string;
   willDo: string[];
+  middle?: ReactNode;
   risks: string[];
   optionalPatchLabel?: string;
   optionalPatchHint?: string;
   optionalPatchChecked?: boolean;
   onOptionalPatchChange?: (checked: boolean) => void;
+  allowDisabled?: boolean;
   error?: string | null;
   busy?: boolean;
   onAllow: () => void;
@@ -22,11 +24,13 @@ const FOCUSABLE =
 export function ConsentDialog({
   title,
   willDo,
+  middle,
   risks,
   optionalPatchLabel,
   optionalPatchHint,
   optionalPatchChecked,
   onOptionalPatchChange,
+  allowDisabled,
   error,
   busy,
   onAllow,
@@ -97,6 +101,7 @@ export function ConsentDialog({
               <li key={item}>{item}</li>
             ))}
           </ul>
+          {middle}
           <p className="consent-lead">风险与限制：</p>
           <ul className="consent-list consent-list-risk">
             {risks.map((item) => (
@@ -143,7 +148,7 @@ export function ConsentDialog({
           <button
             type="button"
             className="btn btn-primary"
-            disabled={!acked || busy}
+            disabled={!acked || busy || allowDisabled}
             onClick={onAllow}
           >
             {busy ? "写入中…" : "允许"}

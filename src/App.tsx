@@ -192,7 +192,10 @@ export default function App() {
     }
   }, [saving, config, cacheStatus?.owned]);
 
-  const handleEnableLongCache = async (patchModels: boolean) => {
+  const handleEnableLongCache = async (
+    patchModels: boolean,
+    method: "hook" | "env",
+  ) => {
     setCacheBusy(true);
     setCacheError(null);
     try {
@@ -203,12 +206,16 @@ export default function App() {
         patchModels && thirdParty && selectedProvider
           ? buildThirdPartyLongCachePatches(config, selectedProvider)
           : [];
-      const result = await enableLongCache(patches);
+      const result = await enableLongCache(patches, method);
       setCacheStatus(result.status);
       if (patches.length > 0) {
         setConfig((prev) => applyPatches(prev, patches, "forward"));
       }
-      setSuccess("已写入用户环境变量 PI_CACHE_RETENTION=long。新开能继承该变量的 Pi 才会发长缓存。");
+      setSuccess(
+        method === "hook"
+          ? "已安装 Pi 扩展。已加载该扩展的 Pi 在下一轮请求会发长缓存；启动时还没有该文件的 Pi 需重启一次。"
+          : "已写入用户环境变量 PI_CACHE_RETENTION=long。新开能继承该变量的 Pi 才会发长缓存。",
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : "启用长缓存失败";
       setCacheError(message);
