@@ -106,3 +106,62 @@ export function revealLocalFile(target: "auth" | "models"): Promise<{ ok: boolea
     body: JSON.stringify({ target }),
   });
 }
+
+export interface LongCacheStatus {
+  supported: boolean;
+  processValue: string | null;
+  userValue: string | null;
+  owned: boolean;
+  previousUserValue: string | null;
+  modelsPersisted: boolean;
+  checked: boolean;
+  externalLong: boolean;
+  sessionCommands: {
+    powershell: string;
+    powershellRpc: string;
+    bash: string;
+    bashRpc: string;
+  };
+}
+
+export interface FieldPatch {
+  path: Array<string | number>;
+  before: unknown | null;
+  after: unknown;
+}
+
+export function fetchLongCacheStatus(): Promise<LongCacheStatus> {
+  return request<LongCacheStatus>("/api/cache-retention");
+}
+
+export function enableLongCache(modelsPatches: FieldPatch[]): Promise<{
+  ok: true;
+  status: LongCacheStatus;
+}> {
+  return request("/api/cache-retention", {
+    method: "PUT",
+    body: JSON.stringify({ action: "enable", modelsPatches }),
+  });
+}
+
+export function disableLongCache(): Promise<{
+  ok: true;
+  status: LongCacheStatus;
+  modelsPatches: FieldPatch[];
+  diskPatched: boolean;
+}> {
+  return request("/api/cache-retention", {
+    method: "PUT",
+    body: JSON.stringify({ action: "disable" }),
+  });
+}
+
+export function markLongCacheModelsPersisted(): Promise<{
+  ok: true;
+  status: LongCacheStatus;
+}> {
+  return request("/api/cache-retention", {
+    method: "PUT",
+    body: JSON.stringify({ action: "mark-persisted" }),
+  });
+}
