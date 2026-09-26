@@ -16,6 +16,13 @@ import {
 } from "./config-store.js";
 import { getEffectiveCatalog } from "./pi-catalog.js";
 import { fetchRemoteModels } from "./remote-models.js";
+import {
+  disableLongCache,
+  enableLongCache,
+  getLongCacheStatus,
+  markLongCacheModelsPersisted,
+} from "./long-cache-store.js";
+import type { FieldPatch } from "../shared/long-cache.js";
 
 export const api = new Hono();
 
@@ -92,6 +99,71 @@ api.post("/remote-models", async (c) => {
   } catch (error) {
     return c.json(
       { error: error instanceof Error ? error.message : "拉取云端模型失败" },
+      400,
+    );
+  }
+});
+
+function parseFieldPatches(raw: unknown): FieldPatch[] {
+  if (!Array.isArray(raw)) return [];
+  const patches: FieldPatch[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const rec = item as Record<string, unknown>;
+    if (!Array.isArray(rec.path) || rec.path[0] !== "providers") continue;
+    const path: Array<string | number> = [];
+    let valid = true;
+    for (const seg of rec.path) {
+      if (typeof seg === "number" && Number.isInteger(seg) && seg >= 0) path.push(seg);
+      else if (typeof seg === "string" && seg.length > 0) path.push(seg);
+      else {
+        valid = false;
+        break;
+      }
+    }
+    if (!valid) continue;
+    patches.push({
+      path,
+      before: rec.before === undefined ? null : rec.before,
+      after: rec.after,
+    });
+  }
+  return patches;
+}
+
+api.get("/cache-retention", async (c) => {
+  try {
+    return c.json(await getLongCacheStatus());
+  } catch (error) {
+    return c.json(
+      { error: error instanceof Error ? error.message : "读取长缓存状态失败" },
+      500,
+    );
+  }
+});
+
+api.put("/cache-retention", async (c) => {
+  try {
+    const body = (await c.req.json()) as {
+      action?: string;
+      modelsPatches?: unknown;
+    };
+    if (body.action === "enable") {
+      const status = await enableLongCache(parseFieldPatches(body.modelsPatches));
+      return c.json({ ok: true, status });
+    }
+    if (body.action === "disable") {
+      const result = await disableLongCache();
+      return c.json({ ok: true, ...result });
+    }
+    if (body.action === "mark-persisted") {
+      const status = await markLongCacheModelsPersisted();
+      return c.json({ ok: true, status });
+    }
+    return c.json({ error: "未知 action" }, 400);
+  } catch (error) {
+    return c.json(
+      { error: error instanceof Error ? error.message : "更新长缓存失败" },
       400,
     );
   }
