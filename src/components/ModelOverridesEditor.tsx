@@ -4,6 +4,7 @@ import { TRANSPORT_TYPES, builtinModelLabel, type BuiltinModelInfo } from "@shar
 import { Dropdown } from "./Dropdown";
 import { KeyValueEditor } from "./KeyValueEditor";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { HelpTip } from "./HelpTip";
 
 interface Props {
   overrides: Record<string, ModelOverride>;
@@ -24,6 +25,22 @@ function readReasoning(override: ModelOverride): TriState {
   if (override.reasoning === true) return "true";
   if (override.reasoning === false) return "false";
   return "default";
+}
+
+function patchOverridePromptCache(
+  override: ModelOverride,
+  key: "short" | "long",
+  raw: string,
+): ModelOverride["promptCache"] {
+  const next: NonNullable<ModelOverride["promptCache"]> = { ...(override.promptCache ?? {}) };
+  if (raw === "") {
+    delete next[key];
+  } else {
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value <= 0) return override.promptCache;
+    next[key] = value;
+  }
+  return next.short != null || next.long != null ? next : undefined;
 }
 
 export function ModelOverridesEditor({
@@ -234,6 +251,48 @@ export function ModelOverridesEditor({
                       onChange={(next) =>
                         updateOverride(id, {
                           transport: (next || undefined) as ModelOverride["transport"],
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label htmlFor={`override-cache-short-${id}`}>
+                      promptCache.short（秒）
+                      <HelpTip
+                        label="promptCache.short"
+                        text="短缓存档声明寿命，仅供 cache warming，不启用 ttl。"
+                      />
+                    </label>
+                    <input
+                      id={`override-cache-short-${id}`}
+                      type="number"
+                      min={1}
+                      value={override.promptCache?.short ?? ""}
+                      placeholder="未设置"
+                      onChange={(e) =>
+                        updateOverride(id, {
+                          promptCache: patchOverridePromptCache(override, "short", e.target.value),
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label htmlFor={`override-cache-long-${id}`}>
+                      promptCache.long（秒）
+                      <HelpTip
+                        label="promptCache.long"
+                        text="长缓存档声明寿命，仅供 warming。要发 1 小时 ttl 请用顶栏启用长缓存。"
+                      />
+                    </label>
+                    <input
+                      id={`override-cache-long-${id}`}
+                      type="number"
+                      min={1}
+                      value={override.promptCache?.long ?? ""}
+                      placeholder="未设置"
+                      onChange={(e) =>
+                        updateOverride(id, {
+                          promptCache: patchOverridePromptCache(override, "long", e.target.value),
                         })
                       }
                     />

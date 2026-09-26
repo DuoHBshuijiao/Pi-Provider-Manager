@@ -38,6 +38,22 @@ function readReasoning(model: ModelDefinition): TriState {
   return "default";
 }
 
+function patchPromptCache(
+  model: ModelDefinition,
+  key: "short" | "long",
+  raw: string,
+): ModelDefinition["promptCache"] {
+  const next: NonNullable<ModelDefinition["promptCache"]> = { ...(model.promptCache ?? {}) };
+  if (raw === "") {
+    delete next[key];
+  } else {
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value <= 0) return model.promptCache;
+    next[key] = value;
+  }
+  return next.short != null || next.long != null ? next : undefined;
+}
+
 function patchCost(
   model: ModelDefinition,
   key: "input" | "output" | "cacheRead" | "cacheWrite",
@@ -69,6 +85,7 @@ const KNOWN_MODEL_KEYS = new Set([
   "headers",
   "transport",
   "compat",
+  "promptCache",
 ]);
 
 function extraFields(model: ModelDefinition): Record<string, unknown> {
@@ -463,6 +480,48 @@ export function ModelEditor({ models, apiTypes, onChange, pathPrefix, remote }: 
                       })
                     }
                     placeholder="未设置"
+                  />
+                </div>
+                <div className="form-field">
+                  <label htmlFor={`model-cache-short-${index}`}>
+                    promptCache.short（秒）
+                    <HelpTip
+                      label="promptCache.short"
+                      text="短缓存档的声明寿命，仅供 Pi cache warming。不决定是否发送 ttl。"
+                    />
+                  </label>
+                  <input
+                    id={`model-cache-short-${index}`}
+                    type="number"
+                    min={1}
+                    value={model.promptCache?.short ?? ""}
+                    placeholder="未设置"
+                    onChange={(e) =>
+                      updateModel(index, {
+                        promptCache: patchPromptCache(model, "short", e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="form-field">
+                  <label htmlFor={`model-cache-long-${index}`}>
+                    promptCache.long（秒）
+                    <HelpTip
+                      label="promptCache.long"
+                      text="长缓存档的声明寿命（Anthropic 常用 3600），仅供 cache warming。TUI/RPC 要发 1 小时 ttl 必须由顶栏启用长缓存。"
+                    />
+                  </label>
+                  <input
+                    id={`model-cache-long-${index}`}
+                    type="number"
+                    min={1}
+                    value={model.promptCache?.long ?? ""}
+                    placeholder="未设置"
+                    onChange={(e) =>
+                      updateModel(index, {
+                        promptCache: patchPromptCache(model, "long", e.target.value),
+                      })
+                    }
                   />
                 </div>
                 <div className="form-field">
