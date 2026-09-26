@@ -292,10 +292,26 @@ export function LongCacheControl({
           当前系统无法写用户环境变量，请用同意框里的 Pi 扩展。
         </p>
       )}
-      {checked && status?.method === "hook" && (
+      {status?.owned && status.method === "hook" && !status.extensionInstalled && (
+        <p className="long-cache-hint">
+          接管记录还在，但扩展文件丢失。再次勾选会重装扩展。
+        </p>
+      )}
+      {checked && status?.method === "hook" && status.hookSnapshot && (
         <p className="long-cache-hint">
           已用 Pi 扩展接管。已加载该扩展的 Pi 在下一轮请求发长缓存；启动时还没有该文件的 Pi
-          需重启一次。
+          需重启一次。/reload 不会覆盖已记下的启动快照。
+        </p>
+      )}
+      {checked && status?.method === "hook" && !status.hookSnapshot && (
+        <p className="long-cache-hint">
+          已用 Pi 扩展接管，但还没有本进程的启动快照。请完整重启一次 Pi，之后 /reload
+          不会冲掉这份快照。
+        </p>
+      )}
+      {!checked && status?.hookSnapshot?.live && (
+        <p className="long-cache-hint">
+          已关闭接管。已加载扩展的 Pi 在下一轮会按启动快照还原。
         </p>
       )}
       {checked && status?.method === "env" && status.sessionCommands && (

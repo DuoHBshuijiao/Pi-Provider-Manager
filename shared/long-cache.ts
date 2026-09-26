@@ -5,6 +5,7 @@ export const PI_CACHE_RETENTION = "PI_CACHE_RETENTION";
 export const PI_CACHE_RETENTION_LONG = "long";
 export const PI_PPM_ENV_PROBE = "PI_PPM_ENV_PROBE";
 export const LONG_CACHE_SIDECAR_NAME = "provider-manager-long-cache.json";
+export const LONG_CACHE_BASELINE_NAME = "provider-manager-long-cache-baseline.json";
 export const LONG_CACHE_EXTENSION_NAME = "provider-manager-long-cache.js";
 export const LONG_CACHE_EXTENSION_MARKER = "@pi-provider-manager/long-cache";
 export const DEFAULT_PROMPT_CACHE = { short: 300, long: 3600 } as const;

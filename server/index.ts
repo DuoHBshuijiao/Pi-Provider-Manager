@@ -3,6 +3,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { upgradeHookExtension } from "./long-cache-store.js";
 import { getEffectiveCatalog } from "./pi-catalog.js";
 import { api } from "./routes.js";
 
@@ -37,5 +38,8 @@ server.listen(port, hostname, () => {
   console.log(`Pi Provider Manager API running on http://${hostname}:${port}`);
   void getEffectiveCatalog().catch((error) => {
     console.warn("[pi-catalog] startup sync failed:", error);
+  });
+  void upgradeHookExtension().catch((error) => {
+    console.warn("[long-cache] extension upgrade failed:", error);
   });
 });

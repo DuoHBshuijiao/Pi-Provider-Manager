@@ -107,6 +107,12 @@ export function revealLocalFile(target: "auth" | "models"): Promise<{ ok: boolea
   });
 }
 
+export interface HookSnapshot {
+  pid: number;
+  value: string | null;
+  live: boolean;
+}
+
 export interface LongCacheStatus {
   envSupported: boolean;
   processValue: string | null;
@@ -117,6 +123,8 @@ export interface LongCacheStatus {
   modelsPersisted: boolean;
   checked: boolean;
   externalLong: boolean;
+  extensionInstalled: boolean;
+  hookSnapshot: HookSnapshot | null;
   sessionCommands: {
     powershell: string;
     powershellRpc: string;

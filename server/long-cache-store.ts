@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import {
   ENV_PROBE_CLEAR_COMMAND,
   envProbeCheckCommand,
+  LONG_CACHE_BASELINE_NAME,
   LONG_CACHE_SIDECAR_NAME,
   PI_CACHE_RETENTION,
   PI_CACHE_RETENTION_LONG,
@@ -15,7 +16,11 @@ import {
   type LongCacheMethod,
 } from "../shared/long-cache.js";
 import { readConfig, resolveAgentDir, writeConfig } from "./config-store.js";
-import { installLongCacheExtension } from "./long-cache-extension.js";
+import {
+  installLongCacheExtension,
+  isLongCacheExtensionInstalled,
+  refreshLongCacheExtension,
+} from "./long-cache-extension.js";
 import {
   canWriteUserEnv,
   getUserEnvironmentVariable,
@@ -31,6 +36,12 @@ export interface LongCacheSidecar {
   modelsPatches: FieldPatch[];
 }
 
+export interface HookSnapshot {
+  pid: number;
+  value: string | null;
+  live: boolean;
+}
+
 export interface LongCacheStatus {
   envSupported: boolean;
   processValue: string | null;
@@ -41,6 +52,8 @@ export interface LongCacheStatus {
   modelsPersisted: boolean;
   checked: boolean;
   externalLong: boolean;
+  extensionInstalled: boolean;
+  hookSnapshot: HookSnapshot | null;
   sessionCommands: typeof SESSION_COMMANDS;
 }
 
@@ -52,6 +65,37 @@ export interface EnvProbeResult {
 
 function sidecarPath(): string {
   return path.join(resolveAgentDir(), LONG_CACHE_SIDECAR_NAME);
+}
+
+function baselinePath(): string {
+  return path.join(resolveAgentDir(), LONG_CACHE_BASELINE_NAME);
+}
+
+function isPidLive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function parseBaseline(raw: unknown): { pid: number; value: string | null } | null {
+  const rec = asRecord(raw);
+  if (!rec || typeof rec.pid !== "number" || !Number.isInteger(rec.pid) || rec.pid <= 0) return null;
+  if (rec.value !== null && typeof rec.value !== "string") return null;
+  return { pid: rec.pid, value: rec.value === null ? null : rec.value };
+}
+
+async function readHookSnapshot(): Promise<HookSnapshot | null> {
+  try {
+    const raw = JSON.parse(await fs.readFile(baselinePath(), "utf8")) as unknown;
+    const parsed = parseBaseline(raw);
+    if (!parsed || !isPidLive(parsed.pid)) return null;
+    return { pid: parsed.pid, value: parsed.value, live: true };
+  } catch {
+    return null;
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -133,9 +177,12 @@ export async function getLongCacheStatus(): Promise<LongCacheStatus> {
   const sidecar = await readSidecar();
   const userValue = canWriteUserEnv() ? await getUserEnvironmentVariable(PI_CACHE_RETENTION) : null;
   const processValue = process.env[PI_CACHE_RETENTION] || null;
+  const extensionInstalled = await isLongCacheExtensionInstalled();
+  const hookSnapshot = await readHookSnapshot();
   const owned = sidecar?.owned === true;
   const method = owned ? sidecar.method : null;
   const envOwned = owned && method === "env";
+  const hookOwned = owned && method === "hook" && extensionInstalled;
   return {
     envSupported: canWriteUserEnv(),
     processValue,
@@ -144,10 +191,18 @@ export async function getLongCacheStatus(): Promise<LongCacheStatus> {
     method,
     previousUserValue: sidecar?.previousUserValue ?? null,
     modelsPersisted: sidecar?.modelsPersisted === true,
-    checked: method === "hook" ? owned : envOwned && userValue === PI_CACHE_RETENTION_LONG,
+    checked: method === "hook" ? hookOwned : envOwned && userValue === PI_CACHE_RETENTION_LONG,
     externalLong: userValue === PI_CACHE_RETENTION_LONG && !envOwned,
+    extensionInstalled,
+    hookSnapshot,
     sessionCommands: SESSION_COMMANDS,
   };
+}
+
+export async function upgradeHookExtension(): Promise<void> {
+  const sidecar = await readSidecar();
+  if (!sidecar?.owned || sidecar.method !== "hook") return;
+  await refreshLongCacheExtension();
 }
 
 function mergeSidecar(
